@@ -13,7 +13,26 @@ import {
 
 export default function Home() {
   const [text, setText] = useState("");
+  const [location, setLocation] = useState("");
+  const [deviceLocation, setDeviceLocation] = useState(null);
   const [complaints, setComplaints] = useState([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDeviceLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      (error) => {
+        console.log("Device location not available:", error.message);
+      }
+    );
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "complaints"), orderBy("createdAt", "desc"));
@@ -29,14 +48,34 @@ export default function Home() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() && !location.trim()) {
+      setError("Please enter both a complaint and a location.");
+      return;
+    }
+    if (!text.trim()) {
+      setError("Please describe your complaint.");
+      return;
+    }
+    if (!location.trim()) {
+      setError("Please enter the area this complaint is about.");
+      return;
+    }
 
-    await addDoc(collection(db, "complaints"), {
+    setError("");
+    const docRef = await addDoc(collection(db, "complaints"), {
       text: text,
+      location: location,
+      deviceLocation: deviceLocation, // null if unavailable
       createdAt: serverTimestamp(),
     });
 
     setText("");
+    setLocation("");
+    fetch("/api/tag-complaint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ complaintId: docRef.id, text: text }),
+    }).catch((err) => console.error("Tagging request failed:", err));
   };
 
   return (
@@ -51,6 +90,19 @@ export default function Home() {
           rows={4}
           style={{ width: "100%", padding: 8 }}
         />
+        <input
+          type="text"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="Area (e.g. Andheri West, Mumbai)"
+          style={{ width: "100%", padding: 8, marginTop: 8 }}
+        />
+        <p style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+          We use your device location in the background to help verify reports.
+        </p>
+        {error && (
+          <p style={{ color: "red", fontSize: 13, marginTop: 4 }}>{error}</p>
+        )}
         <button type="submit" style={{ marginTop: 8 }}>
           Submit Complaint
         </button>
@@ -59,7 +111,11 @@ export default function Home() {
       <h2 style={{ marginTop: 32 }}>Submitted Complaints</h2>
       <ul>
         {complaints.map((c) => (
-          <li key={c.id}>{c.text}</li>
+          <li key={c.id} style={{ marginBottom: 8 }}>
+            <strong>{c.text}</strong>
+            <br />
+            <span style={{ fontSize: 13, color: "#555" }}>📍 {c.location}</span>
+          </li>
         ))}
       </ul>
     </main>
