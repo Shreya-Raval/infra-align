@@ -76,7 +76,14 @@ export default function Home() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Complaint text is too short.");
+        if (res.status === 503 || data.error === "service_unavailable") {
+          setError(
+            data.message ||
+              "We're experiencing high traffic right now. Please try again in a moment."
+          );
+        } else {
+          setError(data.error || "Complaint text is too short.");
+        }
         return;
       }
 
