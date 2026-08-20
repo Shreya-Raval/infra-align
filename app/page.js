@@ -18,6 +18,7 @@ export default function Home() {
   const [deviceLocation, setDeviceLocation] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -63,25 +64,53 @@ export default function Home() {
     }
 
     setError("");
-    const docRef = await addDoc(collection(db, "complaints"), {
-      text: text,
-      location: location,
-      deviceLocation: deviceLocation, // null if unavailable
-      createdAt: serverTimestamp(),
-    });
+    setIsSubmitting(true);
 
-    setText("");
-    setLocation("");
-    fetch("/api/tag-complaint", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ complaintId: docRef.id, text: text }),
-    }).catch((err) => console.error("Tagging request failed:", err));
-    fetch("/api/geocode-complaint", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ complaintId: docRef.id, location }),
-    }).catch((err) => console.error("Geocoding request failed:", err));
+    try {
+      const res = await fetch("/api/tag-complaint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Complaint text is too short.");
+        return;
+      }
+
+      if (!data.isActionable) {
+        setError(
+          "This doesn't appear to be a valid complaint. Please provide more detail about the issue."
+        );
+        return;
+      }
+
+      const docRef = await addDoc(collection(db, "complaints"), {
+        text: text,
+        location: location,
+        deviceLocation: deviceLocation, // null if unavailable
+        createdAt: serverTimestamp(),
+        category: data.category,
+        urgency: data.urgency,
+        summary: data.summary,
+      });
+
+      setText("");
+      setLocation("");
+
+      fetch("/api/geocode-complaint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ complaintId: docRef.id, location }),
+      }).catch((err) => console.error("Geocoding request failed:", err));
+    } catch (err) {
+      console.error("Submission error:", err);
+      setError("Something went wrong while submitting your complaint. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -112,8 +141,8 @@ export default function Home() {
         {error && (
           <p style={{ color: "red", fontSize: 13, marginTop: 4 }}>{error}</p>
         )}
-        <button type="submit" style={{ marginTop: 8 }}>
-          Submit Complaint
+        <button type="submit" disabled={isSubmitting} style={{ marginTop: 8 }}>
+          {isSubmitting ? "Submitting..." : "Submit Complaint"}
         </button>
       </form>
 
