@@ -26,12 +26,13 @@ export async function POST(request) {
         const prompt = `You are a multilingual civic complaint classifier for a citizen reporting platform used across multiple countries. Complaints may be written in any language (English, Hindi, Gujarati, Portuguese, Arabic, etc.).
 
 Read and understand the complaint regardless of its language, then respond with ONLY a JSON object, no other text, no markdown formatting, in this exact shape:
-{"category": "Roads" | "Water Supply" | "Electricity" | "Sanitation/Health" | "Education", "urgency": 1-5, "summary": "one short sentence"}
+{"category": "Roads" | "Water Supply" | "Electricity" | "Sanitation/Health" | "Education", "urgency": 1-5, "summary": "one short sentence", "isActionable": true | false}
 
 Rules:
 - "category" must be exactly one of the five values listed above, in English.
-- "summary" must always be written in English, translated if the original complaint was in another language, regardless of the input language.
+- "summary" must always be written in English, translated if the original complaint was in another language.
 - "urgency" is an integer 1-5, where 5 means immediate danger to health/safety, and 1 means minor/cosmetic issue.
+- "isActionable" should be false if the text is gibberish, a test message, spam, or does not describe a real civic issue. Otherwise true.
 
 Complaint: "${text}"`;
 
@@ -58,6 +59,7 @@ Complaint: "${text}"`;
             category: tags.category,
             urgency: tags.urgency,
             summary: tags.summary,
+            isActionable: tags.isActionable ?? true, // default true if Gemini omits it, fail-safe
         });
 
         return Response.json({ success: true, tags });

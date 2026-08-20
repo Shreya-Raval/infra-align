@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -76,11 +77,19 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ complaintId: docRef.id, text: text }),
     }).catch((err) => console.error("Tagging request failed:", err));
+    fetch("/api/geocode-complaint", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ complaintId: docRef.id, location }),
+    }).catch((err) => console.error("Geocoding request failed:", err));
   };
 
   return (
     <main style={{ maxWidth: 600, margin: "40px auto", padding: 20 }}>
       <h1>Civic Complaint Portal</h1>
+      <p style={{ margin: "8px 0 16px" }}>
+        <Link href="/map">View Complaints Map →</Link>
+      </p>
 
       <form onSubmit={handleSubmit}>
         <textarea
