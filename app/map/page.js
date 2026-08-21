@@ -3,13 +3,16 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { countryConfig } from "@/lib/countryConfig";
 
 const ComplaintsMap = dynamic(() => import("@/components/ComplaintsMap"), {
   ssr: false,
   loading: () => (
     <div
       style={{
-        height: "80vh",
+        height: "70vh",
+        minHeight: 450,
+        width: "100%",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -24,9 +27,11 @@ const ComplaintsMap = dynamic(() => import("@/components/ComplaintsMap"), {
 });
 
 export default function MapPage() {
+  const [selectedCountry, setSelectedCountry] = useState("IN");
   const [report, setReport] = useState(null);
   const [reportMessage, setReportMessage] = useState("");
   const [generatedAt, setGeneratedAt] = useState(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -43,6 +48,9 @@ export default function MapPage() {
       })
       .catch((err) => {
         console.error("Failed to load cached priority report:", err);
+      })
+      .finally(() => {
+        setIsInitialLoading(false);
       });
   }, []);
 
@@ -121,6 +129,31 @@ export default function MapPage() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <select
+            value={selectedCountry}
+            onChange={(e) => setSelectedCountry(e.target.value)}
+            style={{
+              padding: "7px 12px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              backgroundColor: "#ffffff",
+              color: "#111827",
+              fontWeight: 500,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            {Object.entries(countryConfig).map(([code, c]) => (
+              <option
+                key={code}
+                value={code}
+                style={{ color: "#111827", backgroundColor: "#ffffff" }}
+              >
+                {c.name}
+              </option>
+            ))}
+          </select>
+
           {generatedAt && (
             <span style={{ fontSize: 12, color: "#6b7280" }}>
               Last generated at {new Date(generatedAt).toLocaleString()}
@@ -128,10 +161,10 @@ export default function MapPage() {
           )}
           <button
             onClick={handleGenerateReport}
-            disabled={isLoading}
+            disabled={isLoading || isInitialLoading}
             style={{
               padding: "8px 16px",
-              cursor: isLoading ? "not-allowed" : "pointer",
+              cursor: (isLoading || isInitialLoading) ? "not-allowed" : "pointer",
               fontWeight: 500,
             }}
           >
@@ -144,12 +177,73 @@ export default function MapPage() {
         </div>
       </div>
 
-      <ComplaintsMap />
-      <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-        Hospital data is illustrative, structured after RBI&apos;s Handbook of Statistics on Indian States.
-      </p>
+      <ComplaintsMap country={selectedCountry} />
 
-      {error && (
+      {/* Loading Skeleton Placeholder */}
+      {(isLoading || isInitialLoading) && (
+        <section
+          style={{
+            marginTop: 32,
+            minHeight: 320,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              height: 22,
+              width: 220,
+              backgroundColor: "#e5e7eb",
+              borderRadius: 4,
+              marginBottom: 8,
+              opacity: 0.8,
+            }}
+          />
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              style={{
+                padding: 16,
+                backgroundColor: "#f9fafb",
+                border: "1px solid #e5e7eb",
+                borderRadius: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  height: 16,
+                  width: `${45 + i * 15}%`,
+                  backgroundColor: "#e5e7eb",
+                  borderRadius: 4,
+                }}
+              />
+              <div
+                style={{
+                  height: 14,
+                  width: "90%",
+                  backgroundColor: "#f3f4f6",
+                  borderRadius: 4,
+                }}
+              />
+              <div
+                style={{
+                  height: 12,
+                  width: "35%",
+                  backgroundColor: "#f3f4f6",
+                  borderRadius: 4,
+                }}
+              />
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* Error state */}
+      {!isLoading && !isInitialLoading && error && (
         <div
           style={{
             marginTop: 24,
@@ -163,7 +257,8 @@ export default function MapPage() {
         </div>
       )}
 
-      {reportMessage && (
+      {/* Empty / Message state */}
+      {!isLoading && !isInitialLoading && reportMessage && (!report || report.length === 0) && (
         <div
           style={{
             marginTop: 24,
@@ -177,8 +272,9 @@ export default function MapPage() {
         </div>
       )}
 
-      {report && report.length > 0 && (
-        <section style={{ marginTop: 32 }}>
+      {/* Loaded report */}
+      {!isLoading && !isInitialLoading && report && report.length > 0 && (
+        <section style={{ marginTop: 32, minHeight: 320 }}>
           <h2>Suggested Priority Projects</h2>
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             {report.map((item) => (

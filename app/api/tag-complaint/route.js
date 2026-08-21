@@ -1,3 +1,4 @@
+import { adminDb } from "@/lib/firebaseAdmin";
 import { callGemini } from "@/lib/gemini";
 import { sanitizeComplaintText } from "@/lib/sanitize";
 
@@ -10,8 +11,61 @@ const VALID_CATEGORIES = [
   "Other",
 ];
 
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_REQUESTS_PER_WINDOW = 5;
+
+function getClientIp(request) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const ip = forwarded.split(",")[0].trim();
+    if (ip) return ip;
+  }
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp && realIp.trim()) return realIp.trim();
+  return null;
+}
+
+function sanitizeIpToDocId(ip) {
+  return ip.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 export async function POST(request) {
   try {
+    // 1. IP-based rate limiting check before anything else
+    const clientIp = getClientIp(request);
+    if (clientIp) {
+      const docId = sanitizeIpToDocId(clientIp);
+      const rateLimitRef = adminDb.collection("rateLimits").doc(docId);
+      const docSnap = await rateLimitRef.get();
+
+      const now = Date.now();
+      let timestamps = [];
+
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        if (Array.isArray(data?.timestamps)) {
+          timestamps = data.timestamps.filter(
+            (ts) => typeof ts === "number" && now - ts < RATE_LIMIT_WINDOW_MS
+          );
+        }
+      }
+
+      if (timestamps.length >= MAX_REQUESTS_PER_WINDOW) {
+        return Response.json(
+          {
+            error: "rate_limited",
+            message:
+              "You've submitted several complaints recently. Please wait a few minutes and try again.",
+          },
+          { status: 429 }
+        );
+      }
+
+      timestamps.push(now);
+      await rateLimitRef.set({ timestamps });
+    }
+
+    // 2. Minimum length pre-check
     const { text } = await request.json();
 
     if (!text || typeof text !== "string" || text.trim().length < 10) {

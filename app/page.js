@@ -76,7 +76,12 @@ export default function Home() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (res.status === 503 || data.error === "service_unavailable") {
+        if (res.status === 429 || data.error === "rate_limited") {
+          setError(
+            data.message ||
+              "You've submitted several complaints recently. Please wait a few minutes and try again."
+          );
+        } else if (res.status === 503 || data.error === "service_unavailable") {
           setError(
             data.message ||
               "We're experiencing high traffic right now. Please try again in a moment."
