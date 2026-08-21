@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 
@@ -26,8 +26,25 @@ const ComplaintsMap = dynamic(() => import("@/components/ComplaintsMap"), {
 export default function MapPage() {
   const [report, setReport] = useState(null);
   const [reportMessage, setReportMessage] = useState("");
+  const [generatedAt, setGeneratedAt] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/priority-report")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.report && data.report.length > 0) {
+          setReport(data.report);
+          setGeneratedAt(data.generatedAt || null);
+        } else if (data?.message) {
+          setReportMessage(data.message);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load cached priority report:", err);
+      });
+  }, []);
 
   const handleGenerateReport = async () => {
     setIsLoading(true);
@@ -41,13 +58,34 @@ export default function MapPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(
-          data.error || "Failed to generate priority report. Please try again."
-        );
+        if (
+          res.status === 429 ||
+          data.error === "rate_limit_exceeded"
+        ) {
+          setError(
+            data.message ||
+              "AI rate limit or quota exceeded. Please wait a minute and try again."
+          );
+        } else if (
+          res.status === 503 ||
+          data.error === "service_unavailable"
+        ) {
+          setError(
+            data.message ||
+              "AI service is currently experiencing high traffic. Please try again in a moment."
+          );
+        } else {
+          setError(
+            data.message ||
+              data.error ||
+              "Failed to generate priority report. Please try again."
+          );
+        }
         return;
       }
 
       setReport(data.report || []);
+      setGeneratedAt(data.generatedAt || new Date().toISOString());
       if (data.message) {
         setReportMessage(data.message);
       }
@@ -60,6 +98,8 @@ export default function MapPage() {
       setIsLoading(false);
     }
   };
+
+  const hasReport = (report && report.length > 0) || Boolean(generatedAt);
 
   return (
     <main style={{ maxWidth: 1000, margin: "40px auto", padding: 20 }}>
@@ -80,17 +120,28 @@ export default function MapPage() {
           </Link>
         </div>
 
-        <button
-          onClick={handleGenerateReport}
-          disabled={isLoading}
-          style={{
-            padding: "8px 16px",
-            cursor: isLoading ? "not-allowed" : "pointer",
-            fontWeight: 500,
-          }}
-        >
-          {isLoading ? "Analyzing..." : "Generate Priority Report"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {generatedAt && (
+            <span style={{ fontSize: 12, color: "#6b7280" }}>
+              Last generated at {new Date(generatedAt).toLocaleString()}
+            </span>
+          )}
+          <button
+            onClick={handleGenerateReport}
+            disabled={isLoading}
+            style={{
+              padding: "8px 16px",
+              cursor: isLoading ? "not-allowed" : "pointer",
+              fontWeight: 500,
+            }}
+          >
+            {isLoading
+              ? "Analyzing..."
+              : hasReport
+              ? "Regenerate Report"
+              : "Generate Priority Report"}
+          </button>
+        </div>
       </div>
 
       <ComplaintsMap />

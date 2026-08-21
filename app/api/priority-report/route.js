@@ -1,10 +1,47 @@
 import fs from "fs";
 import path from "path";
 import Papa from "papaparse";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebaseAdmin";
+import { callGemini } from "@/lib/gemini";
+import { sanitizeComplaintText } from "@/lib/sanitize";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+export async function GET() {
+  try {
+    const doc = await adminDb.collection("priorityReports").doc("latest").get();
+
+    if (!doc.exists) {
+      return Response.json({
+        report: [],
+        generatedAt: null,
+        message: "No report generated yet.",
+      });
+    }
+
+    const data = doc.data();
+    let generatedAt = null;
+    if (data?.generatedAt) {
+      if (typeof data.generatedAt.toDate === "function") {
+        generatedAt = data.generatedAt.toDate().toISOString();
+      } else if (data.generatedAt instanceof Date) {
+        generatedAt = data.generatedAt.toISOString();
+      } else {
+        generatedAt = data.generatedAt;
+      }
+    }
+
+    return Response.json({
+      report: data?.report || [],
+      generatedAt,
+    });
+  } catch (error) {
+    console.error("Error fetching cached priority report:", error);
+    return Response.json(
+      { error: error.message || "Failed to fetch cached report" },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST() {
   try {
@@ -27,7 +64,9 @@ export async function POST() {
           location: data.location || "Unknown location",
           category: data.category,
           urgency: data.urgency ?? 3,
-          summary: data.summary || data.text || "No summary provided",
+          summary: sanitizeComplaintText(
+            data.summary || data.text || "No summary provided"
+          ),
           lat: data.lat,
           lng: data.lng,
         });
@@ -38,6 +77,7 @@ export async function POST() {
     if (complaints.length === 0) {
       return Response.json({
         report: [],
+        generatedAt: null,
         message: "Not enough tagged complaints yet to generate a report.",
       });
     }
@@ -64,8 +104,6 @@ export async function POST() {
     }
 
     // 4. Generate priority report with Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
-
     const prompt = `You are an expert civic infrastructure analyst. Analyze the following geo-tagged citizen complaints alongside government hospital infrastructure data to identify civic risk hotspots and recommend prioritized civic interventions.
 
 Complaint Data (Location, Category, Urgency (1-5), Summary):
@@ -91,13 +129,65 @@ JSON Schema for each object:
   }
 ]`;
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    const cleaned = responseText.replace(/```json|```/g, "").trim();
-    const report = JSON.parse(cleaned);
+    let cleanedJson;
+    try {
+      cleanedJson = await callGemini(prompt);
+    } catch (geminiError) {
+      console.error("Gemini API error in priority-report:", geminiError);
+      const errMsg = geminiError?.message || "";
+      const isRateLimit =
+        geminiError?.status === 429 ||
+        errMsg.includes("429") ||
+        errMsg.includes("RESOURCE_EXHAUSTED") ||
+        errMsg.toLowerCase().includes("quota") ||
+        errMsg.toLowerCase().includes("rate limit");
+
+      if (isRateLimit) {
+        return Response.json(
+          {
+            error: "rate_limit_exceeded",
+            message:
+              "AI rate limit or quota exceeded. Please wait a minute and try again.",
+          },
+          { status: 429 }
+        );
+      }
+
+      return Response.json(
+        {
+          error: "service_unavailable",
+          message:
+            "AI service is currently experiencing high traffic. Please try again in a moment.",
+        },
+        { status: 503 }
+      );
+    }
+
+    let report = [];
+    try {
+      const parsed = JSON.parse(cleanedJson);
+      report = Array.isArray(parsed) ? parsed : [];
+    } catch (parseError) {
+      console.error("Failed to parse Gemini JSON output:", parseError);
+      return Response.json(
+        {
+          error: "parse_error",
+          message: "Failed to parse the generated report. Please try again.",
+        },
+        { status: 500 }
+      );
+    }
+
+    // 5. Cache the generated report in Firestore
+    const now = new Date();
+    await adminDb.collection("priorityReports").doc("latest").set({
+      report,
+      generatedAt: FieldValue.serverTimestamp(),
+    });
 
     return Response.json({
-      report: Array.isArray(report) ? report : [],
+      report,
+      generatedAt: now.toISOString(),
     });
   } catch (error) {
     console.error("Priority Report Error:", error);
