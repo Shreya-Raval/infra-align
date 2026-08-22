@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { adminDb } from "@/lib/firebaseAdmin";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+import { callGemini } from "@/lib/gemini";
 
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_REQUESTS_PER_WINDOW = 5;
@@ -72,14 +70,12 @@ export async function POST(request) {
     const base64Image = Buffer.from(arrayBuffer).toString("base64");
     const mimeType = imageFile.type || "image/jpeg";
 
-    // 3. AI Moderation with Gemini (gemini-3.6-flash)
-    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-
+    // 3. AI Moderation with Gemini via callGemini
     let decision = "SAFE";
     try {
       const prompt = `Classify this image as either "SAFE" or "UNSAFE" for a public civic complaint platform — UNSAFE meaning explicit/adult content, graphic violence/gore, or clearly irrelevant/inappropriate content unrelated to a civic issue report. Respond with ONLY the single word SAFE or UNSAFE, nothing else.`;
 
-      const result = await model.generateContent([
+      const responseText = await callGemini([
         {
           inlineData: {
             mimeType,
@@ -91,8 +87,8 @@ export async function POST(request) {
         },
       ]);
 
-      const responseText = result.response.text().trim().toUpperCase();
-      if (responseText.includes("UNSAFE")) {
+      const cleanedText = responseText.toUpperCase();
+      if (cleanedText.includes("UNSAFE")) {
         decision = "UNSAFE";
       } else {
         decision = "SAFE";

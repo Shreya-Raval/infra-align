@@ -1,7 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { adminDb } from "@/lib/firebaseAdmin";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+import { callGemini } from "@/lib/gemini";
 
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_REQUESTS_PER_WINDOW = 5;
@@ -72,12 +70,10 @@ export async function POST(request) {
     const base64Audio = Buffer.from(arrayBuffer).toString("base64");
     const mimeType = audioFile.type || "audio/webm";
 
-    // 3. Transcribe audio with Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-
+    // 3. Transcribe audio with Gemini via callGemini
     let transcript;
     try {
-      const result = await model.generateContent([
+      transcript = await callGemini([
         {
           inlineData: {
             mimeType,
@@ -88,7 +84,6 @@ export async function POST(request) {
           text: "Transcribe the speech in this audio to text exactly as spoken. Preserve the original language and do not translate. Return ONLY the transcribed text with no additional commentary, labels, explanations, or markdown formatting.",
         },
       ]);
-      transcript = result.response.text().trim();
     } catch (geminiError) {
       console.error("Gemini API error in transcribe:", geminiError);
       return Response.json(
