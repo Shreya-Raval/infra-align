@@ -2,26 +2,14 @@
 
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { countryConfig } from "@/lib/countryConfig";
 
 const ComplaintsMap = dynamic(() => import("@/components/ComplaintsMap"), {
   ssr: false,
   loading: () => (
-    <div
-      style={{
-        height: "70vh",
-        minHeight: 450,
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#f4f4f5",
-        borderRadius: 8,
-        color: "#666",
-      }}
-    >
-      <p>Loading map...</p>
+    <div className="h-[70vh] min-h-[450px] w-full rounded-2xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-slate-500 text-sm gap-2">
+      <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+      <span>Loading Geographic Map...</span>
     </div>
   ),
 });
@@ -110,228 +98,163 @@ export default function MapPage() {
   const hasReport = (report && report.length > 0) || Boolean(generatedAt);
 
   return (
-    <main style={{ maxWidth: 1000, margin: "40px auto", padding: 20 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 16,
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      {/* Header & Controls Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 style={{ margin: 0 }}>Complaint Map</h1>
-          <Link href="/" style={{ fontSize: 14 }}>
-            ← Back to Complaint Form
-          </Link>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60 mb-1.5">
+            Geographic Spatial Analysis
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Infrastructure & Complaint Map
+          </h1>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <select
-            value={selectedCountry}
-            onChange={(e) => setSelectedCountry(e.target.value)}
-            style={{
-              padding: "7px 12px",
-              borderRadius: 6,
-              border: "1px solid #d1d5db",
-              backgroundColor: "#ffffff",
-              color: "#111827",
-              fontWeight: 500,
-              fontSize: 14,
-              cursor: "pointer",
-            }}
-          >
-            {Object.entries(countryConfig).map(([code, c]) => (
-              <option
-                key={code}
-                value={code}
-                style={{ color: "#111827", backgroundColor: "#ffffff" }}
-              >
-                {c.name}
-              </option>
-            ))}
-          </select>
+        {/* Action Controls */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Country Selector */}
+          <div className="relative">
+            <select
+              value={selectedCountry}
+              onChange={(e) => setSelectedCountry(e.target.value)}
+              className="appearance-none bg-white border border-slate-300 rounded-xl px-4 py-2 pr-9 text-sm font-medium text-slate-900 shadow-xs hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all cursor-pointer"
+            >
+              {Object.entries(countryConfig).map(([code, c]) => (
+                <option key={code} value={code} className="text-slate-900 bg-white">
+                  🌐 {c.name}
+                </option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+              ▼
+            </span>
+          </div>
 
+          {/* Last generated timestamp indicator */}
           {generatedAt && (
-            <span style={{ fontSize: 12, color: "#6b7280" }}>
-              Last generated at {new Date(generatedAt).toLocaleString()}
+            <span className="hidden sm:inline-flex text-xs font-medium text-slate-500 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+              Updated: {new Date(generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
+
+          {/* Live Generate Priority Report Button */}
           <button
             onClick={handleGenerateReport}
             disabled={isLoading || isInitialLoading}
-            style={{
-              padding: "8px 16px",
-              cursor: (isLoading || isInitialLoading) ? "not-allowed" : "pointer",
-              fontWeight: 500,
-            }}
+            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading
-              ? "Analyzing..."
-              : hasReport
-              ? "Regenerate Report"
-              : "Generate Priority Report"}
+            {isLoading ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Analyzing Patterns...</span>
+              </>
+            ) : (
+              <>
+                <span>✨</span>
+                <span>{hasReport ? "Regenerate Report" : "Generate Priority Report"}</span>
+              </>
+            )}
           </button>
         </div>
       </div>
 
+      {/* Map Component */}
       <ComplaintsMap country={selectedCountry} />
 
-      {/* Loading Skeleton Placeholder */}
+      {/* Error alert */}
+      {!isLoading && !isInitialLoading && error && (
+        <div className="mt-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium">
+          ❌ {error}
+        </div>
+      )}
+
+      {/* Info message */}
+      {!isLoading && !isInitialLoading && reportMessage && (!report || report.length === 0) && (
+        <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          ℹ️ {reportMessage}
+        </div>
+      )}
+
+      {/* Loading Skeleton */}
       {(isLoading || isInitialLoading) && (
-        <section
-          style={{
-            marginTop: 32,
-            minHeight: 320,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              height: 22,
-              width: 220,
-              backgroundColor: "#e5e7eb",
-              borderRadius: 4,
-              marginBottom: 8,
-              opacity: 0.8,
-            }}
-          />
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              style={{
-                padding: 16,
-                backgroundColor: "#f9fafb",
-                border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-              }}
-            >
+        <section className="mt-10 min-h-[320px] space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="h-6 w-52 bg-slate-200 rounded-md animate-pulse" />
+            <div className="h-4 w-24 bg-slate-200 rounded-md animate-pulse" />
+          </div>
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
               <div
-                style={{
-                  height: 16,
-                  width: `${45 + i * 15}%`,
-                  backgroundColor: "#e5e7eb",
-                  borderRadius: 4,
-                }}
-              />
-              <div
-                style={{
-                  height: 14,
-                  width: "90%",
-                  backgroundColor: "#f3f4f6",
-                  borderRadius: 4,
-                }}
-              />
-              <div
-                style={{
-                  height: 12,
-                  width: "35%",
-                  backgroundColor: "#f3f4f6",
-                  borderRadius: 4,
-                }}
-              />
-            </div>
-          ))}
+                key={i}
+                className="bg-white rounded-xl border border-slate-200 p-5 space-y-3"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-slate-200 animate-pulse" />
+                  <div
+                    className="h-5 bg-slate-200 rounded-md animate-pulse"
+                    style={{ width: `${45 + i * 15}%` }}
+                  />
+                </div>
+                <div className="h-4 w-full bg-slate-100 rounded-md animate-pulse" />
+                <div className="h-4 w-3/4 bg-slate-100 rounded-md animate-pulse" />
+                <div className="flex gap-4 pt-1">
+                  <div className="h-4 w-28 bg-slate-100 rounded-md animate-pulse" />
+                  <div className="h-4 w-24 bg-slate-100 rounded-md animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
-      {/* Error state */}
-      {!isLoading && !isInitialLoading && error && (
-        <div
-          style={{
-            marginTop: 24,
-            padding: 12,
-            backgroundColor: "#fee2e2",
-            color: "#b91c1c",
-            borderRadius: 6,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* Empty / Message state */}
-      {!isLoading && !isInitialLoading && reportMessage && (!report || report.length === 0) && (
-        <div
-          style={{
-            marginTop: 24,
-            padding: 12,
-            backgroundColor: "#fef3c7",
-            color: "#92400e",
-            borderRadius: 6,
-          }}
-        >
-          {reportMessage}
-        </div>
-      )}
-
-      {/* Loaded report */}
+      {/* Generated Priority Report Display */}
       {!isLoading && !isInitialLoading && report && report.length > 0 && (
-        <section style={{ marginTop: 32, minHeight: 320 }}>
-          <h2>Suggested Priority Projects</h2>
-          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <section className="mt-10">
+          <div className="flex items-center justify-between gap-4 mb-4 pb-2 border-b border-slate-200">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">
+                Suggested Priority Interventions
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Synthesized by Gemini from live citizen complaints and regional healthcare capacity
+              </p>
+            </div>
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              {report.length} Recommendations
+            </span>
+          </div>
+
+          <div className="space-y-3.5">
             {report.map((item) => (
               <div
                 key={item.rank || item.title}
-                style={{
-                  padding: 16,
-                  backgroundColor: "#fafafa",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 8,
-                }}
+                className="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-5 transition-colors shadow-xs"
               >
-                <div
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: 16,
-                    marginBottom: 6,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: "#e0e7ff",
-                      color: "#3730a3",
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
-                      fontSize: 12,
-                    }}
-                  >
+                {/* Header with Rank & Title */}
+                <div className="flex items-start gap-3 mb-2">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 text-xs font-extrabold border border-indigo-200 shrink-0">
                     {item.rank}
                   </span>
-                  <span style={{ color: "#111827" }}>{item.title}</span>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base leading-snug">
+                      {item.title}
+                    </h3>
+                  </div>
                 </div>
-                <div style={{ fontSize: 14, color: "#374151", marginBottom: 8 }}>
+
+                {/* Reasoning */}
+                <p className="text-slate-700 text-sm leading-relaxed mb-3 pl-10">
                   {item.reasoning}
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#6b7280",
-                    display: "flex",
-                    gap: 16,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span>
-                    <strong>Category:</strong> {item.relatedCategory}
+                </p>
+
+                {/* Metadata tags */}
+                <div className="flex items-center gap-3 pl-10 flex-wrap text-xs text-slate-600">
+                  <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 font-medium">
+                    Category: <strong className="text-slate-800">{item.relatedCategory}</strong>
                   </span>
                   {item.affectedArea && (
-                    <span>
-                      📍 <strong>Area:</strong> {item.affectedArea}
+                    <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 font-medium">
+                      📍 Area: <strong className="text-slate-800">{item.affectedArea}</strong>
                     </span>
                   )}
                 </div>

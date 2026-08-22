@@ -30,17 +30,56 @@ L.Icon.Default.mergeOptions({
   shadowUrl: typeof shadowUrl === "string" ? shadowUrl : shadowUrl.src,
 });
 
+function StatusBadge({ status }) {
+  const currentStatus = (status || "registered").toLowerCase();
+
+  const statusConfig = {
+    registered: {
+      bg: "bg-slate-100",
+      text: "text-slate-700",
+      border: "border-slate-200",
+      label: "Registered",
+    },
+    "in progress": {
+      bg: "bg-amber-50",
+      text: "text-amber-800",
+      border: "border-amber-200",
+      label: "In Progress",
+    },
+    closed: {
+      bg: "bg-emerald-50",
+      text: "text-emerald-800",
+      border: "border-emerald-200",
+      label: "Closed",
+    },
+    withdrawn: {
+      bg: "bg-rose-50",
+      text: "text-rose-800",
+      border: "border-rose-200",
+      label: "Withdrawn",
+    },
+  };
+
+  const current = statusConfig[currentStatus] || statusConfig.registered;
+
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${current.bg} ${current.text} ${current.border}`}
+    >
+      {current.label}
+    </span>
+  );
+}
+
 function MapResizeHandler() {
   const map = useMap();
 
   useEffect(() => {
-    // Invalidate size once after mount
     map.invalidateSize();
     const timer = setTimeout(() => {
       map.invalidateSize();
     }, 150);
 
-    // ResizeObserver on the map's container DOM node
     const container = map.getContainer();
     if (!container || typeof ResizeObserver === "undefined") {
       return () => clearTimeout(timer);
@@ -137,21 +176,12 @@ export default function ComplaintsMap({ country = "IN" }) {
 
   return (
     <div>
-      <div
-        style={{
-          height: "70vh",
-          minHeight: 450,
-          width: "100%",
-          borderRadius: 8,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
+      <div className="h-[70vh] min-h-[450px] w-full rounded-2xl overflow-hidden border border-slate-200/90 shadow-sm relative bg-slate-100">
         <MapContainer
           center={config.mapCenter}
           zoom={config.mapZoom}
           scrollWheelZoom={true}
-          style={{ height: "100%", width: "100%" }}
+          className="h-full w-full"
         >
           <MapResizeHandler />
           <MapViewController center={config.mapCenter} zoom={config.mapZoom} />
@@ -176,8 +206,11 @@ export default function ComplaintsMap({ country = "IN" }) {
                     }}
                   >
                     <Popup>
-                      <div style={{ fontSize: 13, lineHeight: 1.4 }}>
-                        <strong>{h.state}</strong> — {h.govt_hospitals_total?.toLocaleString()} government hospitals
+                      <div className="text-xs leading-relaxed">
+                        <strong className="font-semibold text-slate-900">{h.state}</strong> —{" "}
+                        <span className="text-orange-700 font-medium">
+                          {h.govt_hospitals_total?.toLocaleString()} government hospitals
+                        </span>
                       </div>
                     </Popup>
                   </CircleMarker>
@@ -195,29 +228,32 @@ export default function ComplaintsMap({ country = "IN" }) {
             return (
               <Marker key={c.id} position={[c.lat, c.lng]}>
                 <Popup>
-                  <div style={{ fontSize: 13, lineHeight: 1.4 }}>
-                    {c.location && (
-                      <div style={{ fontWeight: "bold", marginBottom: 4 }}>
-                        📍 {c.location}
-                      </div>
-                    )}
+                  <div className="text-xs leading-relaxed space-y-1.5 min-w-[180px]">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1">
+                      {c.location ? (
+                        <div className="font-bold text-slate-900 text-xs">
+                          📍 {c.location}
+                        </div>
+                      ) : <div />}
+                      <StatusBadge status={c.status} />
+                    </div>
+
                     {truncatedText && (
-                      <div style={{ marginBottom: 6, color: "#333" }}>
+                      <div className="text-slate-800 text-xs font-normal">
                         {truncatedText}
                       </div>
                     )}
-                    <div style={{ fontSize: 12, color: "#666" }}>
+
+                    <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-100 flex items-center justify-between">
                       {c.category ? (
-                        <div>
-                          <span>
-                            <strong>Category:</strong> {c.category}
-                          </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-indigo-700">{c.category}</span>
                           {c.urgency !== undefined && c.urgency !== null && (
-                            <span> (Urgency: {c.urgency}/5)</span>
+                            <span className="text-slate-600 font-medium">(Urgency: {c.urgency}/5)</span>
                           )}
                         </div>
                       ) : (
-                        <em>Tagging...</em>
+                        <em className="text-slate-400">Tagging...</em>
                       )}
                     </div>
                   </div>
@@ -227,9 +263,11 @@ export default function ComplaintsMap({ country = "IN" }) {
           })}
         </MapContainer>
       </div>
-      <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-        {config.infraLabel}
-      </p>
+
+      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2.5 px-1">
+        <span>🏥</span>
+        <span>{config.infraLabel}</span>
+      </div>
     </div>
   );
 }
