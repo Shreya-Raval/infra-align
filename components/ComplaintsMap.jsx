@@ -19,7 +19,8 @@ import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { countryConfig } from "@/lib/countryConfig";
 
@@ -123,8 +124,16 @@ function getHospitalRadius(count) {
 
 export default function ComplaintsMap({ country = "IN" }) {
   const config = countryConfig[country] || countryConfig.IN;
+  const [currentUser, setCurrentUser] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [hospitals, setHospitals] = useState([]);
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribeAuth();
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "complaints"), orderBy("createdAt", "desc"));
@@ -225,6 +234,11 @@ export default function ComplaintsMap({ country = "IN" }) {
                 ? `${c.text.slice(0, 100)}...`
                 : c.text;
 
+            const isOwner =
+              currentUser &&
+              c.userId &&
+              currentUser.uid === c.userId;
+
             return (
               <Marker key={c.id} position={[c.lat, c.lng]}>
                 <Popup>
@@ -244,7 +258,8 @@ export default function ComplaintsMap({ country = "IN" }) {
                       </div>
                     )}
 
-                    <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-100 flex items-center justify-between">
+                    {/* Submitter and Category row */}
+                    <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                       {c.category ? (
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-semibold text-indigo-700">{c.category}</span>
@@ -255,7 +270,21 @@ export default function ComplaintsMap({ country = "IN" }) {
                       ) : (
                         <em className="text-slate-400">Tagging...</em>
                       )}
+
+                      {/* Submitter info */}
+                      {c.isAnonymous === true ? (
+                        <span className="italic text-slate-500">Anonymous</span>
+                      ) : c.isAnonymous === false && c.submitterName ? (
+                        <span className="text-slate-600 font-medium">Reported by {c.submitterName}</span>
+                      ) : null}
                     </div>
+
+                    {/* Duplicate Flag Note — visible only to owner */}
+                    {isOwner && c.isDuplicateFlag && (
+                      <div className="text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded mt-1">
+                        ⚠️ Possible duplicate — you have another open complaint in this category/area.
+                      </div>
+                    )}
                   </div>
                 </Popup>
               </Marker>

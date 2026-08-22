@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { db, storage } from "@/lib/firebase";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { auth, db, storage } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
+  updateDoc,
   serverTimestamp,
   onSnapshot,
   orderBy,
@@ -55,8 +60,14 @@ function StatusBadge({ status }) {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
   const [text, setText] = useState("");
   const [location, setLocation] = useState("");
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [deviceLocation, setDeviceLocation] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [showWithdrawn, setShowWithdrawn] = useState(false);
@@ -73,6 +84,32 @@ export default function Home() {
   const audioChunksRef = useRef([]);
   const fileInputRef = useRef(null);
 
+  // Track auth state and profile
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        try {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            setUserProfile(userDoc.data());
+          } else {
+            router.push("/register");
+          }
+        } catch (err) {
+          console.error("Failed to fetch user profile:", err);
+        }
+      } else {
+        setCurrentUser(null);
+        setUserProfile(null);
+      }
+      setAuthChecking(false);
+    });
+
+    return () => unsubscribeAuth();
+  }, [router]);
+
+  // Geolocation
   useEffect(() => {
     if (!navigator.geolocation) return;
 
@@ -89,6 +126,7 @@ export default function Home() {
     );
   }, []);
 
+  // Real-time complaints stream (visible to everyone)
   useEffect(() => {
     const q = query(collection(db, "complaints"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -239,8 +277,30 @@ export default function Home() {
     }
   };
 
+  const handleWithdraw = async (complaintId) => {
+    const confirmed = window.confirm(
+      "Withdraw this complaint? It will no longer be publicly visible by default."
+    );
+    if (!confirmed) return;
+
+    try {
+      await updateDoc(doc(db, "complaints", complaintId), {
+        status: "withdrawn",
+      });
+    } catch (err) {
+      console.error("Failed to withdraw complaint:", err);
+      alert("Failed to withdraw complaint. Please try again.");
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!currentUser) {
+      setError("You must be signed in to submit a complaint.");
+      return;
+    }
+
     if (!text.trim() && !location.trim()) {
       setError("Please enter both a complaint and a location.");
       return;
@@ -259,10 +319,16 @@ export default function Home() {
     setIsSubmitting(true);
 
     try {
+      const userPincode = userProfile?.pincode || null;
+
       const res = await fetch("/api/tag-complaint", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({
+          text,
+          userId: currentUser.uid,
+          pincode: userPincode,
+        }),
       });
 
       const data = await res.json();
@@ -323,8 +389,16 @@ export default function Home() {
         setWarning("Some images failed to upload.");
       }
 
-      // Write complaint document with status: "registered" and imageUrls
+      // Submitter name logic: if isAnonymous is false and userProfile has firstName, use it; otherwise null
+      const submitterName = isAnonymous ? null : (userProfile?.firstName || null);
+
+      // Write complaint document with userId, pincode, isDuplicateFlag, isAnonymous, submitterName, status: "registered"
       await setDoc(docRef, {
+        userId: currentUser.uid,
+        pincode: userPincode,
+        isDuplicateFlag: Boolean(data.isDuplicateFlag),
+        isAnonymous: Boolean(isAnonymous),
+        submitterName: submitterName,
         text: text,
         location: location,
         deviceLocation: deviceLocation, // null if unavailable
@@ -343,6 +417,7 @@ export default function Home() {
       setSelectedImages([]);
       setText("");
       setLocation("");
+      setIsAnonymous(false);
 
       fetch("/api/geocode-complaint", {
         method: "POST",
@@ -378,181 +453,234 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Submission Card Form */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 mb-12">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Complaint Text & Voice Input */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label htmlFor="complaint-text" className="block text-sm font-semibold text-slate-800">
-                Complaint Description
-              </label>
-              <span className="text-xs text-slate-500">Any language supported</span>
+      {/* Auth Gating: Form when signed in, Login Callout when unauthenticated */}
+      {authChecking ? (
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-8 mb-12 text-center text-sm text-slate-500">
+          <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          Loading user status...
+        </div>
+      ) : currentUser ? (
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 mb-12">
+          <div className="flex items-center justify-between gap-3 pb-4 mb-5 border-b border-slate-100 flex-wrap">
+            <div className="text-xs text-slate-600">
+              Reporting as: <strong className="text-slate-900">{userProfile?.firstName ? `${userProfile.firstName} ${userProfile.lastName || ""}` : currentUser.email}</strong>
             </div>
-
-            <div className="relative">
-              <textarea
-                id="complaint-text"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Describe the issue in detail (e.g. Broken water pipeline near Metro station, overflowing garbage)..."
-                rows={4}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base pr-14"
-              />
-
-              {/* Microphone Action Button */}
-              <button
-                type="button"
-                onClick={isRecording ? stopRecording : startRecording}
-                disabled={isSubmitting || isTranscribing}
-                title={isRecording ? "Stop recording" : "Record voice complaint"}
-                className={`absolute right-3 top-3 w-9 h-9 rounded-lg flex items-center justify-center text-sm font-medium transition-all ${
-                  isRecording
-                    ? "bg-rose-600 text-white animate-pulse-ring shadow-sm"
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300/80"
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {isRecording ? "⏹" : "🎤"}
-              </button>
+            <div className="text-xs text-slate-500">
+              📍 {userProfile?.city ? `${userProfile.city}, ${userProfile.state}` : "Registered User"} {userProfile?.pincode ? `(${userProfile.pincode})` : ""}
             </div>
-
-            {/* Voice Status Indicators */}
-            {isRecording && (
-              <div className="flex items-center gap-2 text-rose-600 text-xs font-semibold mt-2 animate-pulse">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
-                Recording in progress... Click the stop button when done speaking.
-              </div>
-            )}
-
-            {isTranscribing && (
-              <div className="flex items-center gap-2 text-indigo-600 text-xs font-semibold mt-2">
-                <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                Transcribing voice recording via Gemini...
-              </div>
-            )}
           </div>
 
-          {/* Area Location Input */}
-          <div>
-            <label htmlFor="area-location" className="block text-sm font-semibold text-slate-800 mb-2">
-              Location / Area
-            </label>
-            <div className="relative">
-              <span className="absolute left-3.5 top-3.5 text-slate-400 text-base">📍</span>
-              <input
-                id="area-location"
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Area, Landmark, or City (e.g. Andheri West, Mumbai)"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
-              />
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Complaint Text & Voice Input */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="complaint-text" className="block text-sm font-semibold text-slate-800">
+                  Complaint Description
+                </label>
+                <span className="text-xs text-slate-500">Any language supported</span>
+              </div>
+
+              <div className="relative">
+                <textarea
+                  id="complaint-text"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Describe the issue in detail (e.g. Broken water pipeline near Metro station, overflowing garbage)..."
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base pr-14"
+                />
+
+                {/* Microphone Action Button */}
+                <button
+                  type="button"
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={isSubmitting || isTranscribing}
+                  title={isRecording ? "Stop recording" : "Record voice complaint"}
+                  className={`absolute right-3 top-3 w-9 h-9 rounded-lg flex items-center justify-center text-sm font-medium transition-all ${
+                    isRecording
+                      ? "bg-rose-600 text-white animate-pulse-ring shadow-sm"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300/80"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {isRecording ? "⏹" : "🎤"}
+                </button>
+              </div>
+
+              {/* Voice Status Indicators */}
+              {isRecording && (
+                <div className="flex items-center gap-2 text-rose-600 text-xs font-semibold mt-2 animate-pulse">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
+                  Recording in progress... Click the stop button when done speaking.
+                </div>
+              )}
+
+              {isTranscribing && (
+                <div className="flex items-center gap-2 text-indigo-600 text-xs font-semibold mt-2">
+                  <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  Transcribing voice recording via Gemini...
+                </div>
+              )}
             </div>
-            <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
-              <span>ℹ️</span> We correlate device location coordinates in the background to assist automated geocoding.
-            </p>
-          </div>
 
-          {/* Image Attachment Picker */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-800 mb-2">
-              Attach Photos <span className="text-xs font-normal text-slate-500">(Up to 10 photos, max 5MB each)</span>
-            </label>
-
-            <div className="flex items-center gap-3">
-              <label
-                htmlFor="photo-upload"
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 cursor-pointer transition-colors ${
-                  isSubmitting || selectedImages.length >= 10 ? "opacity-50 cursor-not-allowed" : ""
-                }`}
-              >
-                <span>📷</span> Add Photos
+            {/* Area Location Input */}
+            <div>
+              <label htmlFor="area-location" className="block text-sm font-semibold text-slate-800 mb-2">
+                Location / Area
               </label>
-              <input
-                id="photo-upload"
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/jpeg,image/png,image/webp"
-                onChange={handleImageChange}
-                disabled={isSubmitting || selectedImages.length >= 10}
-                className="hidden"
-              />
-              <span className="text-xs text-slate-500">
-                {selectedImages.length > 0 ? `${selectedImages.length} photo(s) selected` : "No photos attached yet"}
-              </span>
+              <div className="relative">
+                <span className="absolute left-3.5 top-3.5 text-slate-400 text-base">📍</span>
+                <input
+                  id="area-location"
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Area, Landmark, or City (e.g. Andheri West, Mumbai)"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+                <span>ℹ️</span> We correlate device location coordinates in the background to assist automated geocoding.
+              </p>
             </div>
 
-            {/* Thumbnail Preview Strip */}
-            {selectedImages.length > 0 && (
-              <div className="flex flex-wrap gap-3 mt-3.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                {selectedImages.map((img, index) => (
-                  <div
-                    key={index}
-                    className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-300 shadow-xs group"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img.previewUrl}
-                      alt={`Preview ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveImage(index)}
-                      disabled={isSubmitting}
-                      title="Remove image"
-                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 hover:bg-rose-600 text-white flex items-center justify-center text-[10px] transition-colors"
+            {/* Image Attachment Picker */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
+                Attach Photos <span className="text-xs font-normal text-slate-500">(Up to 10 photos, max 5MB each)</span>
+              </label>
+
+              <div className="flex items-center gap-3">
+                <label
+                  htmlFor="photo-upload"
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 cursor-pointer transition-colors ${
+                    isSubmitting || selectedImages.length >= 10 ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
+                >
+                  <span>📷</span> Add Photos
+                </label>
+                <input
+                  id="photo-upload"
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleImageChange}
+                  disabled={isSubmitting || selectedImages.length >= 10}
+                  className="hidden"
+                />
+                <span className="text-xs text-slate-500">
+                  {selectedImages.length > 0 ? `${selectedImages.length} photo(s) selected` : "No photos attached yet"}
+                </span>
+              </div>
+
+              {/* Thumbnail Preview Strip */}
+              {selectedImages.length > 0 && (
+                <div className="flex flex-wrap gap-3 mt-3.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  {selectedImages.map((img, index) => (
+                    <div
+                      key={index}
+                      className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-300 shadow-xs group"
                     >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.previewUrl}
+                        alt={`Preview ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(index)}
+                        disabled={isSubmitting}
+                        title="Remove image"
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 hover:bg-rose-600 text-white flex items-center justify-center text-[10px] transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Anonymous Submission Checkbox */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                id="anonymous-checkbox"
+                type="checkbox"
+                checked={isAnonymous}
+                onChange={(e) => setIsAnonymous(e.target.checked)}
+                disabled={isSubmitting}
+                className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 border-slate-300 cursor-pointer"
+              />
+              <label
+                htmlFor="anonymous-checkbox"
+                className="text-sm font-medium text-slate-700 cursor-pointer select-none"
+              >
+                Submit anonymously
+              </label>
+            </div>
+
+            {/* Upload Progress */}
+            {uploadProgress && (
+              <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                {uploadProgress}
               </div>
             )}
-          </div>
 
-          {/* Upload Progress */}
-          {uploadProgress && (
-            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              {uploadProgress}
-            </div>
-          )}
-
-          {/* Warning Message */}
-          {warning && (
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-              ⚠️ {warning}
-            </div>
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium">
-              ❌ {error}
-            </div>
-          )}
-
-          {/* Submit Action Button */}
-          <button
-            type="submit"
-            disabled={isSubmitting || isRecording || isTranscribing}
-            className="w-full py-3 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-base shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {isSubmitting ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>{uploadProgress || "Submitting Complaint..."}</span>
-              </>
-            ) : (
-              "Submit Complaint"
+            {/* Warning Message */}
+            {warning && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                ⚠️ {warning}
+              </div>
             )}
-          </button>
-        </form>
-      </div>
 
-      {/* Submitted Complaints Live Feed */}
+            {/* Error Message */}
+            {error && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium">
+                ❌ {error}
+              </div>
+            )}
+
+            {/* Submit Action Button */}
+            <button
+              type="submit"
+              disabled={isSubmitting || isRecording || isTranscribing}
+              className="w-full py-3 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-base shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>{uploadProgress || "Submitting Complaint..."}</span>
+                </>
+              ) : (
+                "Submit Complaint"
+              )}
+            </button>
+          </form>
+        </div>
+      ) : (
+        /* Sign In Prompt Callout */
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-8 mb-12 text-center">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-2xl mx-auto mb-3">
+            🔒
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-1">
+            Sign in to submit a complaint
+          </h2>
+          <p className="text-sm text-slate-600 mb-5 max-w-md mx-auto">
+            You must be signed in to submit civic issues to municipal queues. You can still choose to submit anonymously when submitting.
+          </p>
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm hover:shadow transition-all"
+          >
+            Sign In with Email Link →
+          </Link>
+        </div>
+      )}
+
+      {/* Submitted Complaints Live Feed (Publicly Visible) */}
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
           <div className="flex items-center gap-2.5">
@@ -579,74 +707,113 @@ export default function Home() {
           </div>
         ) : (
           <div className="space-y-3">
-            {displayedComplaints.map((c) => (
-              <div
-                key={c.id}
-                className="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-5 transition-colors shadow-xs"
-              >
-                {/* Meta Header */}
-                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {c.category && (
-                      <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        {c.category}
-                      </span>
-                    )}
-                    {c.urgency !== undefined && c.urgency !== null && (
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-xs font-semibold ${
-                          c.urgency >= 4
-                            ? "bg-rose-50 text-rose-700 border border-rose-200"
-                            : c.urgency === 3
-                            ? "bg-amber-50 text-amber-700 border border-amber-200"
-                            : "bg-slate-100 text-slate-700 border border-slate-200"
-                        }`}
-                      >
-                        Urgency: {c.urgency}/5
-                      </span>
-                    )}
+            {displayedComplaints.map((c) => {
+              const isOwner =
+                currentUser &&
+                c.userId &&
+                currentUser.uid === c.userId;
+              const canWithdraw =
+                isOwner &&
+                (c.status || "registered").toLowerCase() !== "closed" &&
+                (c.status || "registered").toLowerCase() !== "withdrawn";
+
+              return (
+                <div
+                  key={c.id}
+                  className="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-5 transition-colors shadow-xs"
+                >
+                  {/* Meta Header */}
+                  <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {c.category && (
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {c.category}
+                        </span>
+                      )}
+                      {c.urgency !== undefined && c.urgency !== null && (
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-xs font-semibold ${
+                            c.urgency >= 4
+                              ? "bg-rose-50 text-rose-700 border border-rose-200"
+                              : c.urgency === 3
+                              ? "bg-amber-50 text-amber-700 border border-amber-200"
+                              : "bg-slate-100 text-slate-700 border border-slate-200"
+                          }`}
+                        >
+                          Urgency: {c.urgency}/5
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={c.status} />
+                      {canWithdraw && (
+                        <button
+                          type="button"
+                          onClick={() => handleWithdraw(c.id)}
+                          className="px-2 py-0.5 rounded-md text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
+                          title="Withdraw complaint"
+                        >
+                          Withdraw
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <StatusBadge status={c.status} />
-                </div>
 
-                {/* Complaint Text */}
-                <p className="text-slate-900 font-medium text-sm sm:text-base leading-relaxed mb-2.5">
-                  {c.text}
-                </p>
-
-                {/* AI Summary / Translation if present */}
-                {c.summary && c.summary !== c.text && (
-                  <p className="text-xs text-slate-500 italic mb-2.5">
-                    💡 AI Summary: &ldquo;{c.summary}&rdquo;
+                  {/* Complaint Text */}
+                  <p className="text-slate-900 font-medium text-sm sm:text-base leading-relaxed mb-2.5">
+                    {c.text}
                   </p>
-                )}
 
-                {/* Location Footer */}
-                <div className="flex items-center justify-between text-xs text-slate-500 flex-wrap gap-2 pt-2 border-t border-slate-100">
-                  <span className="flex items-center gap-1 font-medium text-slate-600">
-                    📍 {c.location}
-                  </span>
-                  {c.createdAt?.toDate && (
-                    <span>{c.createdAt.toDate().toLocaleDateString()}</span>
+                  {/* AI Summary / Translation if present */}
+                  {c.summary && c.summary !== c.text && (
+                    <p className="text-xs text-slate-500 italic mb-2.5">
+                      💡 AI Summary: &ldquo;{c.summary}&rdquo;
+                    </p>
+                  )}
+
+                  {/* Duplicate Flag Badge — visible only to owner */}
+                  {isOwner && c.isDuplicateFlag && (
+                    <div className="my-2.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-1.5">
+                      <span>⚠️</span>
+                      <span>Possible duplicate — you have another open complaint in this category/area.</span>
+                    </div>
+                  )}
+
+                  {/* Location & Submitter Footer */}
+                  <div className="flex items-center justify-between text-xs text-slate-500 flex-wrap gap-2 pt-2 border-t border-slate-100">
+                    <span className="flex items-center gap-1 font-medium text-slate-600">
+                      📍 {c.location}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      {c.isAnonymous === true ? (
+                        <span className="text-slate-500 italic">Anonymous</span>
+                      ) : c.isAnonymous === false && c.submitterName ? (
+                        <span className="text-slate-600 font-medium">Reported by {c.submitterName}</span>
+                      ) : null}
+                      {c.createdAt?.toDate && (
+                        <span>{c.createdAt.toDate().toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Attached Image Gallery */}
+                  {c.imageUrls && c.imageUrls.length > 0 && (
+                    <div className="flex gap-2.5 mt-3 pt-3 border-t border-slate-100 flex-wrap">
+                      {c.imageUrls.map((url, idx) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={idx}
+                          src={url}
+                          alt={`Attachment ${idx + 1}`}
+                          className="w-14 h-14 rounded-lg object-cover border border-slate-200 hover:scale-105 transition-transform"
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
-
-                {/* Attached Image Gallery */}
-                {c.imageUrls && c.imageUrls.length > 0 && (
-                  <div className="flex gap-2.5 mt-3 pt-3 border-t border-slate-100 flex-wrap">
-                    {c.imageUrls.map((url, idx) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={idx}
-                        src={url}
-                        alt={`Attachment ${idx + 1}`}
-                        className="w-14 h-14 rounded-lg object-cover border border-slate-200 hover:scale-105 transition-transform"
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { auth } from "@/lib/firebase";
+import { useRouter } from "next/navigation";
+import { auth, db } from "@/lib/firebase";
 import {
   sendSignInLinkToEmail,
   isSignInWithEmailLink,
@@ -9,8 +10,10 @@ import {
   onAuthStateChanged,
   signOut,
 } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [confirmEmail, setConfirmEmail] = useState("");
@@ -19,6 +22,20 @@ export default function LoginPage() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  const checkUserProfileAndRedirect = async (uid) => {
+    try {
+      const userDoc = await getDoc(doc(db, "users", uid));
+      if (userDoc.exists()) {
+        router.push("/");
+      } else {
+        router.push("/register");
+      }
+    } catch (err) {
+      console.error("User profile check error:", err);
+      router.push("/");
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -32,9 +49,12 @@ export default function LoginPage() {
       if (emailForSignIn) {
         setIsSigningIn(true);
         signInWithEmailLink(auth, emailForSignIn, window.location.href)
-          .then((result) => {
+          .then(async (result) => {
             window.localStorage.removeItem("emailForSignIn");
             setMessage(`Signed in successfully as ${result.user?.email || emailForSignIn}`);
+            if (result.user?.uid) {
+              await checkUserProfileAndRedirect(result.user.uid);
+            }
           })
           .catch((err) => {
             console.error("Sign-in with link error:", err);
@@ -106,6 +126,9 @@ export default function LoginPage() {
       window.localStorage.removeItem("emailForSignIn");
       setNeedsEmailConfirmation(false);
       setMessage(`Signed in successfully as ${result.user?.email || confirmEmail.trim()}`);
+      if (result.user?.uid) {
+        await checkUserProfileAndRedirect(result.user.uid);
+      }
     } catch (err) {
       console.error("Confirm sign-in link error:", err);
       setError(

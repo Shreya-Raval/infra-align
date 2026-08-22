@@ -66,7 +66,8 @@ export async function POST(request) {
     }
 
     // 2. Minimum length pre-check
-    const { text } = await request.json();
+    const body = await request.json();
+    const { text, userId, pincode, complaintId } = body;
 
     if (!text || typeof text !== "string" || text.trim().length < 10) {
       return Response.json(
@@ -125,11 +126,40 @@ ${sanitizedText}
       tags.urgency = urgencyNum;
     }
 
+    // 3. Duplicate check based on per-user category + pincode rule
+    let isDuplicateFlag = false;
+    if (userId && tags.category && pincode) {
+      try {
+        const userComplaintsSnap = await adminDb
+          .collection("complaints")
+          .where("userId", "==", userId)
+          .get();
+
+        const activeDuplicates = userComplaintsSnap.docs.filter((doc) => {
+          if (complaintId && doc.id === complaintId) return false;
+          const d = doc.data();
+          const catMatch = d.category === tags.category;
+          const pinMatch =
+            String(d.pincode || "").trim() === String(pincode).trim();
+          const status = (d.status || "registered").toLowerCase();
+          const statusMatch = status === "registered" || status === "in progress";
+          return catMatch && pinMatch && statusMatch;
+        });
+
+        if (activeDuplicates.length > 0) {
+          isDuplicateFlag = true;
+        }
+      } catch (dupErr) {
+        console.error("Duplicate check error:", dupErr);
+      }
+    }
+
     return Response.json({
       category: tags.category,
       urgency: tags.urgency,
       summary: tags.summary,
       isActionable: tags.isActionable ?? true,
+      isDuplicateFlag: isDuplicateFlag,
     });
   } catch (error) {
     console.error("Tagging error:", error);
