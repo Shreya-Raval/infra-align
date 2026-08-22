@@ -3,61 +3,20 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { auth, db, storage } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
   doc,
   getDoc,
   setDoc,
-  updateDoc,
   serverTimestamp,
   onSnapshot,
   orderBy,
   query,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-
-function StatusBadge({ status }) {
-  const currentStatus = (status || "registered").toLowerCase();
-
-  const statusConfig = {
-    registered: {
-      bg: "bg-slate-100",
-      text: "text-slate-700",
-      border: "border-slate-200",
-      label: "Registered",
-    },
-    "in progress": {
-      bg: "bg-amber-50",
-      text: "text-amber-800",
-      border: "border-amber-200",
-      label: "In Progress",
-    },
-    closed: {
-      bg: "bg-emerald-50",
-      text: "text-emerald-800",
-      border: "border-emerald-200",
-      label: "Closed",
-    },
-    withdrawn: {
-      bg: "bg-rose-50",
-      text: "text-rose-800",
-      border: "border-rose-200",
-      label: "Withdrawn",
-    },
-  };
-
-  const current = statusConfig[currentStatus] || statusConfig.registered;
-
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${current.bg} ${current.text} ${current.border}`}
-    >
-      {current.label}
-    </span>
-  );
-}
+import ComplaintCard from "@/components/ComplaintCard";
 
 export default function Home() {
   const router = useRouter();
@@ -74,6 +33,7 @@ export default function Home() {
   const [selectedImages, setSelectedImages] = useState([]);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const [moderationWarning, setModerationWarning] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -142,6 +102,7 @@ export default function Home() {
   const handleImageChange = (e) => {
     setError("");
     setWarning("");
+    setModerationWarning("");
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
@@ -187,6 +148,7 @@ export default function Home() {
   const startRecording = async () => {
     setError("");
     setWarning("");
+    setModerationWarning("");
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError("Microphone access is not supported by your browser.");
@@ -277,22 +239,6 @@ export default function Home() {
     }
   };
 
-  const handleWithdraw = async (complaintId) => {
-    const confirmed = window.confirm(
-      "Withdraw this complaint? It will no longer be publicly visible by default."
-    );
-    if (!confirmed) return;
-
-    try {
-      await updateDoc(doc(db, "complaints", complaintId), {
-        status: "withdrawn",
-      });
-    } catch (err) {
-      console.error("Failed to withdraw complaint:", err);
-      alert("Failed to withdraw complaint. Please try again.");
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -316,6 +262,7 @@ export default function Home() {
 
     setError("");
     setWarning("");
+    setModerationWarning("");
     setIsSubmitting(true);
 
     try {
@@ -357,32 +304,82 @@ export default function Home() {
         return;
       }
 
-      // Generate doc ID first so Firebase Storage and Firestore can reference the same complaintId
+      // Generate doc ID first so Supabase Storage and Firestore can reference the same complaintId
       const docRef = doc(collection(db, "complaints"));
       const complaintId = docRef.id;
 
-      // Upload selected images to Firebase Storage
+      // Upload selected images to Supabase Storage with pre-moderation check
       const imageUrls = [];
       let uploadFailedCount = 0;
+      let moderatedCount = 0;
 
       if (selectedImages.length > 0) {
         for (let i = 0; i < selectedImages.length; i++) {
           const img = selectedImages[i];
-          setUploadProgress(`Uploading photo ${i + 1} of ${selectedImages.length}...`);
+          setUploadProgress(
+            `Checking & uploading image ${i + 1} of ${selectedImages.length}...`
+          );
+
+          // 1. Moderate image via /api/moderate-image
+          let isSafe = true;
           try {
-            const storageRef = ref(
-              storage,
-              `complaints/${complaintId}/${i}-${img.file.name}`
-            );
-            const snapshot = await uploadBytes(storageRef, img.file);
-            const downloadUrl = await getDownloadURL(snapshot.ref);
-            imageUrls.push(downloadUrl);
+            const modFormData = new FormData();
+            modFormData.append("image", img.file);
+
+            const modRes = await fetch("/api/moderate-image", {
+              method: "POST",
+              body: modFormData,
+            });
+
+            if (modRes.ok) {
+              const modData = await modRes.json();
+              if (modData.result === "UNSAFE") {
+                isSafe = false;
+              }
+            }
+          } catch (modErr) {
+            console.warn(`Moderation check failed for ${img.file.name}, defaulting to safe:`, modErr);
+            isSafe = true;
+          }
+
+          if (!isSafe) {
+            moderatedCount++;
+            continue; // Skip uploading this unsafe image
+          }
+
+          // 2. Upload to Supabase Storage
+          try {
+            const filePath = `${complaintId}/${i}-${img.file.name}`;
+            const { error: uploadError } = await supabase.storage
+              .from("complaint-images")
+              .upload(filePath, img.file, {
+                cacheControl: "3600",
+                upsert: false,
+              });
+
+            if (uploadError) {
+              throw uploadError;
+            }
+
+            const { data: urlData } = supabase.storage
+              .from("complaint-images")
+              .getPublicUrl(filePath);
+
+            if (urlData?.publicUrl) {
+              imageUrls.push(urlData.publicUrl);
+            }
           } catch (uploadErr) {
             console.error(`Failed to upload image ${img.file.name}:`, uploadErr);
             uploadFailedCount++;
           }
         }
         setUploadProgress("");
+      }
+
+      if (moderatedCount > 0) {
+        setModerationWarning(
+          `${moderatedCount} image(s) were removed for not meeting content guidelines.`
+        );
       }
 
       if (uploadFailedCount > 0) {
@@ -628,7 +625,14 @@ export default function Home() {
               </div>
             )}
 
-            {/* Warning Message */}
+            {/* Moderation Removal Notice */}
+            {moderationWarning && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm">
+                🛡️ {moderationWarning}
+              </div>
+            )}
+
+            {/* Storage Upload Warning */}
             {warning && (
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
                 ⚠️ {warning}
@@ -707,113 +711,13 @@ export default function Home() {
           </div>
         ) : (
           <div className="space-y-3">
-            {displayedComplaints.map((c) => {
-              const isOwner =
-                currentUser &&
-                c.userId &&
-                currentUser.uid === c.userId;
-              const canWithdraw =
-                isOwner &&
-                (c.status || "registered").toLowerCase() !== "closed" &&
-                (c.status || "registered").toLowerCase() !== "withdrawn";
-
-              return (
-                <div
-                  key={c.id}
-                  className="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-5 transition-colors shadow-xs"
-                >
-                  {/* Meta Header */}
-                  <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {c.category && (
-                        <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {c.category}
-                        </span>
-                      )}
-                      {c.urgency !== undefined && c.urgency !== null && (
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-xs font-semibold ${
-                            c.urgency >= 4
-                              ? "bg-rose-50 text-rose-700 border border-rose-200"
-                              : c.urgency === 3
-                              ? "bg-amber-50 text-amber-700 border border-amber-200"
-                              : "bg-slate-100 text-slate-700 border border-slate-200"
-                          }`}
-                        >
-                          Urgency: {c.urgency}/5
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={c.status} />
-                      {canWithdraw && (
-                        <button
-                          type="button"
-                          onClick={() => handleWithdraw(c.id)}
-                          className="px-2 py-0.5 rounded-md text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
-                          title="Withdraw complaint"
-                        >
-                          Withdraw
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Complaint Text */}
-                  <p className="text-slate-900 font-medium text-sm sm:text-base leading-relaxed mb-2.5">
-                    {c.text}
-                  </p>
-
-                  {/* AI Summary / Translation if present */}
-                  {c.summary && c.summary !== c.text && (
-                    <p className="text-xs text-slate-500 italic mb-2.5">
-                      💡 AI Summary: &ldquo;{c.summary}&rdquo;
-                    </p>
-                  )}
-
-                  {/* Duplicate Flag Badge — visible only to owner */}
-                  {isOwner && c.isDuplicateFlag && (
-                    <div className="my-2.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-center gap-1.5">
-                      <span>⚠️</span>
-                      <span>Possible duplicate — you have another open complaint in this category/area.</span>
-                    </div>
-                  )}
-
-                  {/* Location & Submitter Footer */}
-                  <div className="flex items-center justify-between text-xs text-slate-500 flex-wrap gap-2 pt-2 border-t border-slate-100">
-                    <span className="flex items-center gap-1 font-medium text-slate-600">
-                      📍 {c.location}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      {c.isAnonymous === true ? (
-                        <span className="text-slate-500 italic">Anonymous</span>
-                      ) : c.isAnonymous === false && c.submitterName ? (
-                        <span className="text-slate-600 font-medium">Reported by {c.submitterName}</span>
-                      ) : null}
-                      {c.createdAt?.toDate && (
-                        <span>{c.createdAt.toDate().toLocaleDateString()}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Attached Image Gallery */}
-                  {c.imageUrls && c.imageUrls.length > 0 && (
-                    <div className="flex gap-2.5 mt-3 pt-3 border-t border-slate-100 flex-wrap">
-                      {c.imageUrls.map((url, idx) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          key={idx}
-                          src={url}
-                          alt={`Attachment ${idx + 1}`}
-                          className="w-14 h-14 rounded-lg object-cover border border-slate-200 hover:scale-105 transition-transform"
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {displayedComplaints.map((c) => (
+              <ComplaintCard
+                key={c.id}
+                complaint={c}
+                currentUser={currentUser}
+              />
+            ))}
           </div>
         )}
       </div>

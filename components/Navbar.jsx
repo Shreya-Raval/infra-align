@@ -1,15 +1,27 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const navLinks = [
     { href: "/", label: "Report Issue" },
+    ...(currentUser ? [{ href: "/my-complaints", label: "My Complaints" }] : []),
     { href: "/map", label: "Map & Priority Insights" },
-    { href: "/login", label: "Account" },
+    { href: "/login", label: currentUser ? "Account" : "Sign In" },
   ];
 
   return (
