@@ -1,17 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 
-export default function RegisterPage() {
+export default function CreateManagerPage() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
 
-  // Form fields
+  // Form Fields
+  const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [pincode, setPincode] = useState("");
@@ -22,23 +25,37 @@ export default function RegisterPage() {
   const [isLookingUpPincode, setIsLookingUpPincode] = useState(false);
   const [pincodeError, setPincodeError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState("");
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  // Guard: check auth status on mount
+  // Check auth and user role
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-        router.push("/login");
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        try {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            setUserRole(data.role || "citizen");
+          } else {
+            setUserRole("citizen");
+          }
+        } catch (err) {
+          console.error("Failed to load user role:", err);
+          setUserRole("citizen");
+        }
       } else {
-        setUser(currentUser);
+        setCurrentUser(null);
+        setUserRole(null);
       }
-      setAuthLoading(false);
+      setAuthChecking(false);
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, []);
 
-  // Handle Pincode Auto-lookup when 6 digits are entered
+  // Pincode auto-lookup
   const handlePincodeChange = (e) => {
     const value = e.target.value.replace(/\D/g, "").slice(0, 6);
     setPincode(value);
@@ -84,73 +101,100 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setFormError("");
+    setError("");
+    setSuccessMessage("");
 
+    if (!email.trim()) {
+      setError("Please enter an email address for the new manager.");
+      return;
+    }
     if (!firstName.trim() || !lastName.trim()) {
-      setFormError("Please enter your first and last name.");
+      setError("Please enter the manager's first and last name.");
       return;
     }
-
-    if (!pincode.trim() || pincode.length !== 6 || !/^\d{6}$/.test(pincode)) {
-      setFormError("Please enter a valid 6-digit Indian pincode.");
+    if (!pincode.trim() || pincode.length !== 6) {
+      setError("Please enter a valid 6-digit postal pincode.");
       return;
     }
-
     if (!city.trim() || !state.trim()) {
-      setFormError("Please provide both City and State.");
-      return;
-    }
-
-    if (!user || !user.uid) {
-      setFormError("Authentication session expired. Please sign in again.");
-      router.push("/login");
+      setError("Please provide both City and State.");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const superadminEmail = (
-        process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL ||
-        process.env.SUPERADMIN_EMAIL ||
-        ""
-      )
-        .trim()
-        .toLowerCase();
+      const idToken = await auth.currentUser.getIdToken();
 
-      const userEmail = (user.email || "").trim().toLowerCase();
-      const role =
-        superadminEmail && userEmail && userEmail === superadminEmail
-          ? "superadmin"
-          : "citizen";
-
-      await setDoc(doc(db, "users", user.uid), {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        pincode: pincode.trim(),
-        city: city.trim(),
-        state: state.trim(),
-        email: user.email || "",
-        role: role,
-        createdAt: serverTimestamp(),
+      const res = await fetch("/api/create-manager", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          pincode: pincode.trim(),
+          city: city.trim(),
+          state: state.trim(),
+        }),
       });
 
-      router.push("/");
-    } catch (err) {
-      console.error("User profile creation error:", err);
-      setFormError(
-        err.message || "Failed to save profile. Please check your connection and try again."
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to create manager account.");
+        return;
+      }
+
+      setSuccessMessage(
+        `Manager account for ${data.email} has been successfully provisioned with the "manager" role.`
       );
+      // Reset form
+      setEmail("");
+      setFirstName("");
+      setLastName("");
+      setPincode("");
+      setCity("");
+      setState("");
+    } catch (err) {
+      console.error("Create manager error:", err);
+      setError("An unexpected network error occurred. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (authLoading) {
+  if (authChecking) {
     return (
       <main className="max-w-md mx-auto px-4 py-20 text-center">
         <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-sm text-slate-500">Checking authentication...</p>
+        <p className="text-sm text-slate-500">Checking permissions...</p>
+      </main>
+    );
+  }
+
+  // Access Denied if not superadmin
+  if (!currentUser || userRole !== "superadmin") {
+    return (
+      <main className="max-w-md mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-8">
+          <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-2xl mx-auto mb-3">
+            🚫
+          </div>
+          <h1 className="text-xl font-bold text-slate-900 mb-2">Access Denied</h1>
+          <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+            You do not have authorization to view this area. Only provisioned <strong>superadmin</strong> accounts can create and manage administrative roles.
+          </p>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-colors"
+          >
+            ← Return to Dashboard
+          </Link>
+        </div>
       </main>
     );
   }
@@ -159,28 +203,39 @@ export default function RegisterPage() {
     <main className="max-w-xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 mb-2.5">
-          New Citizen Profile
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 mb-2.5">
+          👑 Superadmin Console
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          Complete Your Registration
+          Create Municipal Manager Account
         </h1>
         <p className="text-sm text-slate-600 mt-1.5">
-          Provide your name and location to link verified reports to municipal priority pipelines.
+          Provision administrative accounts with authority to view escalated complaints and manage department queues.
         </p>
       </div>
 
-      {/* Profile Form Card */}
+      {/* Form Card */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8">
-        {/* User Account Pill */}
-        {user && (
-          <div className="mb-6 p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs text-slate-600">
-            <span>Signed in as: <strong className="text-slate-800">{user.email}</strong></span>
-            <span className="text-emerald-700 font-semibold">✓ Verified</span>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Email Address */}
+          <div>
+            <label htmlFor="manager-email" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Manager Email Address <span className="text-rose-500">*</span>
+            </label>
+            <input
+              id="manager-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="manager@muncipality.gov.in"
+              disabled={isSubmitting}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Managers will sign in passwordlessly using Email Link verification sent to this address.
+            </p>
+          </div>
+
           {/* Name Row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -192,7 +247,7 @@ export default function RegisterPage() {
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                placeholder="Aarav"
+                placeholder="Ramesh"
                 disabled={isSubmitting}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
               />
@@ -207,7 +262,7 @@ export default function RegisterPage() {
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                placeholder="Sharma"
+                placeholder="Patel"
                 disabled={isSubmitting}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
               />
@@ -218,9 +273,9 @@ export default function RegisterPage() {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label htmlFor="pincode" className="block text-xs font-semibold text-slate-700">
-                Pincode <span className="text-rose-500">*</span>
+                Assigned Jurisdiction Pincode <span className="text-rose-500">*</span>
               </label>
-              <span className="text-[11px] text-slate-500">6 digits (Auto-detects location)</span>
+              <span className="text-[11px] text-slate-500">6 digits</span>
             </div>
 
             <div className="relative">
@@ -231,7 +286,7 @@ export default function RegisterPage() {
                 maxLength={6}
                 value={pincode}
                 onChange={handlePincodeChange}
-                placeholder="400053"
+                placeholder="380015"
                 disabled={isSubmitting}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm font-medium tracking-wide focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all pr-10"
               />
@@ -249,7 +304,7 @@ export default function RegisterPage() {
             )}
           </div>
 
-          {/* City & State Row (Auto-filled but editable) */}
+          {/* City & State Row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="city" className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -260,7 +315,7 @@ export default function RegisterPage() {
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="Mumbai"
+                placeholder="Ahmedabad"
                 disabled={isSubmitting}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
               />
@@ -275,17 +330,24 @@ export default function RegisterPage() {
                 type="text"
                 value={state}
                 onChange={(e) => setState(e.target.value)}
-                placeholder="Maharashtra"
+                placeholder="Gujarat"
                 disabled={isSubmitting}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
               />
             </div>
           </div>
 
-          {/* Form Error */}
-          {formError && (
+          {/* Success Alert */}
+          {successMessage && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-medium">
+              ✅ {successMessage}
+            </div>
+          )}
+
+          {/* Error Alert */}
+          {error && (
             <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm font-medium">
-              ❌ {formError}
+              ❌ {error}
             </div>
           )}
 
@@ -298,10 +360,10 @@ export default function RegisterPage() {
             {isSubmitting ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Saving Profile...</span>
+                <span>Provisioning Manager Account...</span>
               </>
             ) : (
-              "Complete Registration & Continue"
+              "Provision Manager Account"
             )}
           </button>
         </form>

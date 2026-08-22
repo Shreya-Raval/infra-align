@@ -3,23 +3,44 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function Navbar() {
   const pathname = usePathname();
   const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      if (user) {
+        try {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            setUserRole(userDoc.data()?.role || "citizen");
+          } else {
+            setUserRole("citizen");
+          }
+        } catch {
+          setUserRole("citizen");
+        }
+      } else {
+        setUserRole(null);
+      }
     });
     return () => unsubscribe();
   }, []);
 
   const navLinks = [
-    { href: "/", label: "Report Issue" },
+    { href: "/", label: "Public Feed" },
+    { href: "/report", label: "Report Issue" },
+    { href: "/dashboard", label: "Dashboard" },
     ...(currentUser ? [{ href: "/my-complaints", label: "My Complaints" }] : []),
+    ...(userRole === "superadmin"
+      ? [{ href: "/admin/create-manager", label: "Create Manager" }]
+      : []),
     { href: "/map", label: "Map & Priority Insights" },
     { href: "/login", label: currentUser ? "Account" : "Sign In" },
   ];
