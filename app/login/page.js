@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import {
@@ -14,6 +14,7 @@ import { doc, getDoc } from "firebase/firestore";
 
 export default function LoginPage() {
   const router = useRouter();
+  const hasAttemptedSignIn = useRef(false);
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [confirmEmail, setConfirmEmail] = useState("");
@@ -47,24 +48,27 @@ export default function LoginPage() {
       const emailForSignIn = window.localStorage.getItem("emailForSignIn");
 
       if (emailForSignIn) {
-        setIsSigningIn(true);
-        signInWithEmailLink(auth, emailForSignIn, window.location.href)
-          .then(async (result) => {
-            window.localStorage.removeItem("emailForSignIn");
-            setMessage(`Signed in successfully as ${result.user?.email || emailForSignIn}`);
-            if (result.user?.uid) {
-              await checkUserProfileAndRedirect(result.user.uid);
-            }
-          })
-          .catch((err) => {
-            console.error("Sign-in with link error:", err);
-            setError(
-              "The sign-in link is invalid or has expired. Please request a new link below."
-            );
-          })
-          .finally(() => {
-            setIsSigningIn(false);
-          });
+        if (!hasAttemptedSignIn.current) {
+          hasAttemptedSignIn.current = true;
+          setIsSigningIn(true);
+          signInWithEmailLink(auth, emailForSignIn, window.location.href)
+            .then(async (result) => {
+              window.localStorage.removeItem("emailForSignIn");
+              setMessage(`Signed in successfully as ${result.user?.email || emailForSignIn}`);
+              if (result.user?.uid) {
+                await checkUserProfileAndRedirect(result.user.uid);
+              }
+            })
+            .catch((err) => {
+              console.error("Sign-in with link error:", err);
+              setError(
+                "The sign-in link is invalid or has expired. Please request a new link below."
+              );
+            })
+            .finally(() => {
+              setIsSigningIn(false);
+            });
+        }
       } else {
         // Link opened in a different browser/device where localStorage is not available
         setNeedsEmailConfirmation(true);

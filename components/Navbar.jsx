@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
 
@@ -33,16 +34,24 @@ export default function Navbar() {
     return () => unsubscribe();
   }, []);
 
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      router.push("/");
+    } catch (err) {
+      console.error("Failed to sign out:", err);
+    }
+  };
+
   const navLinks = [
-    { href: "/", label: "Public Feed" },
+    { href: "/", label: "Dashboard" },
+    { href: "/feed", label: "Public Feed" },
     { href: "/report", label: "Report Issue" },
-    { href: "/dashboard", label: "Dashboard" },
     ...(currentUser ? [{ href: "/my-complaints", label: "My Complaints" }] : []),
     ...(userRole === "superadmin"
       ? [{ href: "/admin/create-manager", label: "Create Manager" }]
       : []),
     { href: "/map", label: "Map & Priority Insights" },
-    { href: "/login", label: currentUser ? "Account" : "Sign In" },
   ];
 
   return (
@@ -81,6 +90,27 @@ export default function Navbar() {
               </Link>
             );
           })}
+
+          {currentUser ? (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="px-3.5 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 transition-all cursor-pointer"
+            >
+              Sign Out
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                pathname === "/login"
+                  ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              }`}
+            >
+              Sign In
+            </Link>
+          )}
         </nav>
       </div>
     </header>

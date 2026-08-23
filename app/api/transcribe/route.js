@@ -52,7 +52,10 @@ export async function POST(request) {
       }
 
       timestamps.push(now);
-      await rateLimitRef.set({ timestamps });
+      await rateLimitRef.set({
+        timestamps,
+        expireAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
     }
 
     // 2. Parse multipart form data with audio file

@@ -22,6 +22,11 @@ export default function ReportPage() {
 
   const [text, setText] = useState("");
   const [location, setLocation] = useState("");
+  const [pincode, setPincode] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [isLookingUpPincode, setIsLookingUpPincode] = useState(false);
+  const [pincodeError, setPincodeError] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [deviceLocation, setDeviceLocation] = useState(null);
   const [selectedImages, setSelectedImages] = useState([]);
@@ -47,7 +52,11 @@ export default function ReportPage() {
         try {
           const userDoc = await getDoc(doc(db, "users", user.uid));
           if (userDoc.exists()) {
-            setUserProfile(userDoc.data());
+            const data = userDoc.data();
+            setUserProfile(data);
+            if (data.pincode) setPincode(data.pincode);
+            if (data.city) setCity(data.city);
+            if (data.state) setState(data.state);
           } else {
             router.push("/register");
           }
@@ -57,12 +66,59 @@ export default function ReportPage() {
       } else {
         setCurrentUser(null);
         setUserProfile(null);
+        setPincode("");
+        setCity("");
+        setState("");
       }
       setAuthChecking(false);
     });
 
     return () => unsubscribeAuth();
   }, [router]);
+
+  // Pincode auto-lookup
+  const handlePincodeChange = (e) => {
+    const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setPincode(value);
+    setPincodeError("");
+
+    if (value.length === 6) {
+      lookupPincode(value);
+    }
+  };
+
+  const lookupPincode = async (code) => {
+    setIsLookingUpPincode(true);
+    setPincodeError("");
+
+    try {
+      const res = await fetch(`https://api.postalpincode.in/pincode/${code}`);
+      const data = await res.json();
+
+      if (
+        Array.isArray(data) &&
+        data.length > 0 &&
+        data[0].Status === "Success" &&
+        Array.isArray(data[0].PostOffice) &&
+        data[0].PostOffice.length > 0
+      ) {
+        const postOffice = data[0].PostOffice[0];
+        setCity(postOffice.District || postOffice.Name || "");
+        setState(postOffice.State || "");
+      } else {
+        setPincodeError(
+          "Pincode details not found automatically. You can enter City and State manually."
+        );
+      }
+    } catch (err) {
+      console.error("Pincode lookup error:", err);
+      setPincodeError(
+        "Could not verify pincode online. Please enter City and State manually."
+      );
+    } finally {
+      setIsLookingUpPincode(false);
+    }
+  };
 
   // Geolocation
   useEffect(() => {
@@ -231,16 +287,8 @@ export default function ReportPage() {
       return;
     }
 
-    if (!text.trim() && !location.trim()) {
-      setError("Please enter both a complaint and a location.");
-      return;
-    }
     if (!text.trim()) {
       setError("Please describe your complaint.");
-      return;
-    }
-    if (!location.trim()) {
-      setError("Please enter the area this complaint is about.");
       return;
     }
 
@@ -251,8 +299,9 @@ export default function ReportPage() {
     setIsSubmitting(true);
 
     try {
-      const userPincode = userProfile?.pincode || null;
-      const userState = userProfile?.state || null;
+      const currentPincode = pincode.trim() || null;
+      const currentCity = city.trim() || null;
+      const currentState = state.trim() || null;
 
       const res = await fetch("/api/tag-complaint", {
         method: "POST",
@@ -260,7 +309,7 @@ export default function ReportPage() {
         body: JSON.stringify({
           text,
           userId: currentUser.uid,
-          pincode: userPincode,
+          pincode: currentPincode,
         }),
       });
 
@@ -375,11 +424,12 @@ export default function ReportPage() {
       // Submitter name logic: if isAnonymous is false and userProfile has firstName, use it; otherwise null
       const submitterName = isAnonymous ? null : (userProfile?.firstName || null);
 
-      // Write complaint document with userId, pincode, state, isDuplicateFlag, isAnonymous, submitterName, status: "registered"
+      // Write complaint document with userId, pincode, city, state, isDuplicateFlag, isAnonymous, submitterName, status: "registered"
       await setDoc(docRef, {
         userId: currentUser.uid,
-        pincode: userPincode,
-        state: userState,
+        pincode: currentPincode,
+        city: currentCity,
+        state: currentState,
         isDuplicateFlag: Boolean(data.isDuplicateFlag),
         isAnonymous: Boolean(isAnonymous),
         submitterName: submitterName,
@@ -402,13 +452,25 @@ export default function ReportPage() {
       setText("");
       setLocation("");
       setIsAnonymous(false);
+      if (userProfile) {
+        setPincode(userProfile.pincode || "");
+        setCity(userProfile.city || "");
+        setState(userProfile.state || "");
+      }
       setSuccessMessage("Your complaint has been successfully registered and queued for municipal review!");
 
-      fetch("/api/geocode-complaint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ complaintId: docRef.id, location }),
-      }).catch((err) => console.error("Geocoding request failed:", err));
+      // Geocoding query constructed from landmark, city, and state
+      const geocodeQuery = [location.trim(), currentCity, currentState]
+        .filter(Boolean)
+        .join(", ");
+
+      if (geocodeQuery) {
+        fetch("/api/geocode-complaint", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ complaintId: docRef.id, location: geocodeQuery }),
+        }).catch((err) => console.error("Geocoding request failed:", err));
+      }
     } catch (err) {
       console.error("Submission error:", err);
       setError("Something went wrong while submitting your complaint. Please try again.");
@@ -447,84 +509,12 @@ export default function ReportPage() {
               Reporting as: <strong className="text-slate-900">{userProfile?.firstName ? `${userProfile.firstName} ${userProfile.lastName || ""}` : currentUser.email}</strong>
             </div>
             <div className="text-xs text-slate-500">
-              📍 {userProfile?.city ? `${userProfile.city}, ${userProfile.state}` : "Registered User"} {userProfile?.pincode ? `(${userProfile.pincode})` : ""}
+              📍 {city ? `${city}, ${state}` : userProfile?.city ? `${userProfile.city}, ${userProfile.state}` : "Registered User"} {pincode ? `(${pincode})` : ""}
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Complaint Text & Voice Input */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label htmlFor="complaint-text" className="block text-sm font-semibold text-slate-800">
-                  Complaint Description
-                </label>
-                <span className="text-xs text-slate-500">Any language supported</span>
-              </div>
-
-              <div className="relative">
-                <textarea
-                  id="complaint-text"
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="Describe the issue in detail (e.g. Broken water pipeline near Metro station, overflowing garbage)..."
-                  rows={4}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base pr-14"
-                />
-
-                {/* Microphone Action Button */}
-                <button
-                  type="button"
-                  onClick={isRecording ? stopRecording : startRecording}
-                  disabled={isSubmitting || isTranscribing}
-                  title={isRecording ? "Stop recording" : "Record voice complaint"}
-                  className={`absolute right-3 top-3 w-9 h-9 rounded-lg flex items-center justify-center text-sm font-medium transition-all ${
-                    isRecording
-                      ? "bg-rose-600 text-white animate-pulse-ring shadow-sm"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300/80"
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  {isRecording ? "⏹" : "🎤"}
-                </button>
-              </div>
-
-              {/* Voice Status Indicators */}
-              {isRecording && (
-                <div className="flex items-center gap-2 text-rose-600 text-xs font-semibold mt-2 animate-pulse">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
-                  Recording in progress... Click the stop button when done speaking.
-                </div>
-              )}
-
-              {isTranscribing && (
-                <div className="flex items-center gap-2 text-indigo-600 text-xs font-semibold mt-2">
-                  <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                  Transcribing voice recording via Gemini...
-                </div>
-              )}
-            </div>
-
-            {/* Area Location Input */}
-            <div>
-              <label htmlFor="area-location" className="block text-sm font-semibold text-slate-800 mb-2">
-                Location / Area
-              </label>
-              <div className="relative">
-                <span className="absolute left-3.5 top-3.5 text-slate-400 text-base">📍</span>
-                <input
-                  id="area-location"
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="Area, Landmark, or City (e.g. Andheri West, Mumbai)"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
-                />
-              </div>
-              <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
-                <span>ℹ️</span> We correlate device location coordinates in the background to assist automated geocoding.
-              </p>
-            </div>
-
-            {/* Image Attachment Picker */}
+            {/* 1. File / Image Upload Picker */}
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-2">
                 Attach Photos <span className="text-xs font-normal text-slate-500">(Up to 10 photos, max 5MB each)</span>
@@ -583,6 +573,150 @@ export default function ReportPage() {
               )}
             </div>
 
+            {/* 2. Voice Recording Action */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
+                Voice Input <span className="text-xs font-normal text-slate-500">(Optional - speak your complaint in any language)</span>
+              </label>
+              <button
+                type="button"
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={isSubmitting || isTranscribing}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-xs ${
+                  isRecording
+                    ? "bg-rose-600 hover:bg-rose-700 text-white animate-pulse"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300/80"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <span>{isRecording ? "⏹" : "🎤"}</span>
+                <span>{isRecording ? "Stop Recording" : "Record Voice Complaint"}</span>
+              </button>
+
+              {/* Voice Status Indicators */}
+              {isRecording && (
+                <div className="flex items-center gap-2 text-rose-600 text-xs font-semibold mt-2 animate-pulse">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
+                  Recording in progress... Click stop when done speaking.
+                </div>
+              )}
+
+              {isTranscribing && (
+                <div className="flex items-center gap-2 text-indigo-600 text-xs font-semibold mt-2">
+                  <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  Transcribing voice recording via Gemini...
+                </div>
+              )}
+            </div>
+
+            {/* 3. Complaint Description Textarea */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="complaint-text" className="block text-sm font-semibold text-slate-800">
+                  Complaint Description <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-xs text-slate-500">Any language supported</span>
+              </div>
+
+              <textarea
+                id="complaint-text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Describe the issue in detail (e.g. Broken water pipeline near Metro station, overflowing garbage)..."
+                rows={4}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
+              />
+            </div>
+
+            {/* Landmark / Address Detail (Optional) */}
+            <div>
+              <label htmlFor="area-location" className="block text-sm font-semibold text-slate-800 mb-2">
+                Landmark / Address Detail <span className="text-xs font-normal text-slate-500">(optional)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-3.5 text-slate-400 text-base">📍</span>
+                <input
+                  id="area-location"
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="e.g. Near Metro Station, opposite the market"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+                <span>ℹ️</span> We correlate device location coordinates in the background to assist automated geocoding.
+              </p>
+            </div>
+
+            {/* 4. Pincode, City, State Fields */}
+            <div className="space-y-4 pt-1">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="report-pincode" className="block text-xs font-semibold text-slate-700">
+                    Pincode <span className="text-slate-400 font-normal">(Auto-detects City & State)</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500">6 digits</span>
+                </div>
+
+                <div className="relative">
+                  <input
+                    id="report-pincode"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={pincode}
+                    onChange={handlePincodeChange}
+                    placeholder="400053"
+                    disabled={isSubmitting}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm font-medium tracking-wide focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all pr-10"
+                  />
+                  {isLookingUpPincode && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {pincodeError && (
+                  <p className="text-xs text-amber-700 mt-1.5 font-medium">
+                    ⚠️ {pincodeError}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="report-city" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    City / District
+                  </label>
+                  <input
+                    id="report-city"
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Mumbai"
+                    disabled={isSubmitting}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="report-state" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    State
+                  </label>
+                  <input
+                    id="report-state"
+                    type="text"
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    placeholder="Maharashtra"
+                    disabled={isSubmitting}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Anonymous Submission Checkbox */}
             <div className="flex items-center gap-2 pt-1">
               <input
@@ -628,7 +762,7 @@ export default function ReportPage() {
               <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium flex items-center justify-between gap-3">
                 <span>✅ {successMessage}</span>
                 <Link
-                  href="/"
+                  href="/feed"
                   className="underline font-semibold hover:text-emerald-900 shrink-0"
                 >
                   View Feed →

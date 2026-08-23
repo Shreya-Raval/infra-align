@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -110,30 +110,39 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      const superadminEmail = (
-        process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL ||
-        process.env.SUPERADMIN_EMAIL ||
-        ""
-      )
-        .trim()
-        .toLowerCase();
+      const userDocRef = doc(db, "users", user.uid);
+      const existingUserDoc = await getDoc(userDocRef);
 
-      const userEmail = (user.email || "").trim().toLowerCase();
-      const role =
-        superadminEmail && userEmail && userEmail === superadminEmail
-          ? "superadmin"
-          : "citizen";
+      if (existingUserDoc.exists()) {
+        router.push("/");
+        return;
+      }
 
-      await setDoc(doc(db, "users", user.uid), {
+      await setDoc(userDocRef, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         pincode: pincode.trim(),
         city: city.trim(),
         state: state.trim(),
         email: user.email || "",
-        role: role,
+        role: "citizen",
         createdAt: serverTimestamp(),
       });
+
+      // Best-effort superadmin bootstrap call (server-side verification)
+      try {
+        const idToken = await user.getIdToken();
+        if (idToken) {
+          await fetch("/api/bootstrap-superadmin", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+          });
+        }
+      } catch (bootstrapErr) {
+        console.error("Superadmin bootstrap error:", bootstrapErr);
+      }
 
       router.push("/");
     } catch (err) {

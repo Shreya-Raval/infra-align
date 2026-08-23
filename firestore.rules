@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: checks if the requester holds a manager or superadmin role
+    function isManagerOrSuperadmin() {
+      return request.auth != null &&
+        (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "manager" ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "superadmin"
+        );
+    }
+
+    // 1. Users collection
+    match /users/{uid} {
+      // Citizen self-registration only
+      allow create: if request.auth != null &&
+                      request.auth.uid == uid &&
+                      request.resource.data.role == "citizen";
+
+      // Self read or manager/superadmin read
+      allow read: if request.auth != null &&
+                    (
+                      request.auth.uid == uid ||
+                      isManagerOrSuperadmin()
+                    );
+
+      // Self update with immutable role check
+      allow update: if request.auth != null &&
+                      request.auth.uid == uid &&
+                      request.resource.data.role == resource.data.role;
+
+      // Deletions are forbidden
+      allow delete: if false;
+    }
+
+    // 2. Complaints collection
+    match /complaints/{id} {
+      // Public read
+      allow read: if true;
+
+      // Authenticated creation with status initialized to 'registered'
+      allow create: if request.auth != null &&
+                      request.resource.data.userId == request.auth.uid &&
+                      request.resource.data.status == "registered";
+
+      // Updates strictly restricted to two explicit shapes
+      allow update: if (
+        // a) Owner withdraw
+        (
+          request.auth != null &&
+          request.auth.uid == resource.data.userId &&
+          request.resource.data.status == "withdrawn" &&
+          resource.data.status != "withdrawn" &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status"])
+        ) ||
+        // b) Manager / Superadmin status change
+        (
+          isManagerOrSuperadmin() &&
+          resource.data.status != "withdrawn" &&
+          request.resource.data.status != "withdrawn" &&
+          request.resource.data.status in ["registered", "in progress", "closed"] &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status",
+            "statusChangedByName",
+            "statusChangedByState",
+            "statusChangedAt"
+          ])
+        )
+      );
+
+      // Deletions are forbidden
+      allow delete: if false;
+    }
+
+    // 3. Rate limits collection (Admin SDK only, deny all client access)
+    match /rateLimits/{id} {
+      allow read, write: if false;
+    }
+
+    // 4. Priority reports collection (Public read, deny client writes)
+    match /priorityReports/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
