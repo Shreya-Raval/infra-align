@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import ThemeToggle from "@/components/ThemeToggle";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -111,6 +112,10 @@ export default function Navbar() {
               Sign In
             </Link>
           )}
+
+          <div className="pl-1 sm:pl-1.5 border-l border-slate-200 ml-1">
+            <ThemeToggle />
+          </div>
         </nav>
       </div>
     </header>
