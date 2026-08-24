@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useTheme } from "next-themes";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import {
@@ -17,29 +18,35 @@ import {
   Cell,
   CartesianGrid,
 } from "recharts";
+import {
+  chartTooltipStyle,
+  chartAxisTick,
+  chartGridStroke,
+} from "@/lib/uiTheme";
+import { IconRefresh, IconChart } from "@/components/Icons";
 
 const CATEGORY_COLORS = {
-  Roads: "#6366f1", // Indigo
-  "Water Supply": "#0ea5e9", // Sky
-  Electricity: "#eab308", // Yellow/Amber
-  "Sanitation/Health": "#10b981", // Emerald
-  Education: "#a855f7", // Purple
-  Other: "#64748b", // Slate
+  Roads: "#6366f1",
+  "Water Supply": "#0ea5e9",
+  Electricity: "#eab308",
+  "Sanitation/Health": "#10b981",
+  Education: "#a855f7",
+  Other: "#64748b",
 };
 
 const STATUS_COLORS = {
-  Registered: "#94a3b8", // Slate
-  "In Progress": "#f59e0b", // Amber
-  Closed: "#10b981", // Emerald
-  Withdrawn: "#f43f5e", // Rose
+  Registered: "#94a3b8",
+  "In Progress": "#f59e0b",
+  Closed: "#10b981",
+  Withdrawn: "#f43f5e",
 };
 
 const URGENCY_COLORS = {
-  1: "#10b981", // Low - Green
-  2: "#06b6d4", // Cyan
-  3: "#f59e0b", // Moderate - Amber
-  4: "#f97316", // High - Orange
-  5: "#ef4444", // Critical - Red
+  1: "#10b981",
+  2: "#06b6d4",
+  3: "#f59e0b",
+  4: "#f97316",
+  5: "#ef4444",
 };
 
 function getComplaintState(c) {
@@ -78,6 +85,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(null);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   useEffect(() => {
     setIsMounted(true);
@@ -105,12 +114,10 @@ export default function DashboardPage() {
     fetchComplaints();
   }, [fetchComplaints]);
 
-  // Calculations
   const nonWithdrawn = complaints.filter(
     (c) => (c.status || "registered").toLowerCase() !== "withdrawn"
   );
 
-  // 1. Category Breakdown (Pie Chart) - Excl. Withdrawn
   const categoryCounts = {};
   nonWithdrawn.forEach((c) => {
     const cat = c.category || "Other";
@@ -121,7 +128,6 @@ export default function DashboardPage() {
     value: categoryCounts[cat],
   }));
 
-  // 2. State Breakdown (Bar Chart) - Excl. Withdrawn
   const stateCounts = {};
   nonWithdrawn.forEach((c) => {
     const st = getComplaintState(c);
@@ -133,15 +139,13 @@ export default function DashboardPage() {
       count: stateCounts[st],
     }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 10); // Top 10 states/cities
+    .slice(0, 10);
 
-  // 3. Today's Complaint Count
   const todayCount = complaints.filter((c) => {
     const d = c.createdAt?.toDate ? c.createdAt.toDate() : null;
     return isToday(d);
   }).length;
 
-  // 4. Status Breakdown (Pie/Bar Chart) - Incl. Withdrawn
   const statusCounts = {
     Registered: 0,
     "In Progress": 0,
@@ -160,7 +164,6 @@ export default function DashboardPage() {
     value: statusCounts[s],
   }));
 
-  // 5. Urgency Distribution (Bar Chart) - Excl. Withdrawn
   const urgencyCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   nonWithdrawn.forEach((c) => {
     const u = Number(c.urgency);
@@ -174,7 +177,6 @@ export default function DashboardPage() {
     count: urgencyCounts[level],
   }));
 
-  // 6. Average Resolution Time (for closed complaints with timestamps)
   const resolvedWithTimestamps = complaints.filter((c) => {
     const isClosed = (c.status || "").toLowerCase() === "closed";
     return isClosed && c.createdAt?.toDate && c.statusChangedAt?.toDate;
@@ -192,130 +194,137 @@ export default function DashboardPage() {
     avgResolutionDays = `${avgDays.toFixed(1)} days`;
   }
 
+  const tooltipStyle = chartTooltipStyle(isDark);
+  const axisTick = chartAxisTick(isDark);
+  const gridStroke = chartGridStroke(isDark);
+  const legendStyle = {
+    fontSize: "0.75rem",
+    paddingTop: "0.5rem",
+    color: isDark ? "#94a3b8" : "#64748b",
+  };
+
   return (
     <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-border">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60 mb-2.5">
-            📊 Public Analytics
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Civic Intelligence & Stats Dashboard
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-600 mt-1">
-            Real-time municipal performance metrics, resolution velocity, and infrastructure health analytics.
+          <p className="ia-eyebrow">Overview</p>
+          <h1 className="ia-heading">Civic Intelligence & Stats Dashboard</h1>
+          <p className="ia-subtext mt-1">
+            Real-time municipal performance metrics, resolution velocity, and
+            infrastructure health analytics.
           </p>
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
           {lastRefreshed && (
-            <span className="text-xs text-slate-400">
-              Updated {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            <span className="text-xs text-muted-foreground">
+              Updated{" "}
+              {lastRefreshed.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </span>
           )}
           <button
             type="button"
             onClick={fetchComplaints}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            className="ia-btn-secondary px-3.5 py-2 cursor-pointer disabled:opacity-50"
           >
-            <span>🔄</span>
-            <span>{loading ? "Refreshing..." : "Refresh Data"}</span>
+            <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span>{loading ? "Refreshing..." : "Refresh"}</span>
           </button>
         </div>
       </div>
 
       {loading ? (
         <div className="py-20 text-center">
-          <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-500 font-medium">Aggregating public platform metrics...</p>
+          <div className="w-8 h-8 border-2 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground font-medium">
+            Aggregating public platform metrics...
+          </p>
         </div>
       ) : complaints.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-12 text-center max-w-lg mx-auto">
-          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-2xl mx-auto mb-3 text-slate-400">
-            📊
+        <div className="ia-card p-12 text-center max-w-lg mx-auto">
+          <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto mb-3 text-muted-foreground">
+            <IconChart className="h-5 w-5" />
           </div>
-          <h2 className="text-lg font-bold text-slate-900 mb-1">
+          <h2 className="text-lg font-bold text-foreground mb-1">
             No complaints registered yet
           </h2>
-          <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            As citizens report issues and managers resolve tickets, visual analytics will populate automatically.
+          <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+            As citizens report issues and managers resolve tickets, visual
+            analytics will populate automatically.
           </p>
           <Link
             href="/report"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm transition-all"
+            className="ia-btn-primary px-5 py-2.5"
           >
             Report the First Issue →
           </Link>
         </div>
       ) : (
         <div className="space-y-8">
-          {/* Key Metrics KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Active Issues */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+            <div className="ia-card p-5">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                 Active Reports
               </div>
-              <div className="text-3xl font-extrabold text-slate-900">
+              <div className="text-3xl font-extrabold text-foreground">
                 {nonWithdrawn.length}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">
+              <div className="text-[11px] text-muted-foreground mt-1">
                 Total registered & in-progress
               </div>
             </div>
 
-            {/* Today's Complaints */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+            <div className="ia-card p-5">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                 Today&apos;s Reports
               </div>
-              <div className="text-3xl font-extrabold text-indigo-600">
+              <div className="text-3xl font-extrabold text-indigo-600 dark:text-indigo-400">
                 {todayCount}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">
+              <div className="text-[11px] text-muted-foreground mt-1">
                 Submitted in the current calendar day
               </div>
             </div>
 
-            {/* Resolved Count */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+            <div className="ia-card p-5">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                 Resolved Complaints
               </div>
-              <div className="text-3xl font-extrabold text-emerald-600">
+              <div className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400">
                 {statusCounts.Closed}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">
+              <div className="text-[11px] text-muted-foreground mt-1">
                 Successfully closed by managers
               </div>
             </div>
 
-            {/* Average Resolution Time */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+            <div className="ia-card p-5">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                 Avg. Resolution Time
               </div>
-              <div className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1">
+              <div className="text-xl sm:text-2xl font-extrabold text-foreground mt-1">
                 {avgResolutionDays}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1">
+              <div className="text-[11px] text-muted-foreground mt-1">
                 From creation to closed timestamp
               </div>
             </div>
           </div>
 
-          {/* Charts Row 1: Category Breakdown & Status Breakdown */}
           {isMounted && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Category Breakdown Pie Chart */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6">
+              <div className="ia-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-bold text-slate-900">
+                  <h2 className="text-base font-bold text-foreground">
                     Category Breakdown
                   </h2>
-                  <span className="text-xs text-slate-500">Excl. withdrawn</span>
+                  <span className="text-xs text-muted-foreground">
+                    Excl. withdrawn
+                  </span>
                 </div>
                 <div className="h-64 sm:h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -336,30 +345,21 @@ export default function DashboardPage() {
                           />
                         ))}
                       </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#ffffff",
-                          borderColor: "#e2e8f0",
-                          borderRadius: "0.75rem",
-                          fontSize: "0.75rem",
-                          boxShadow: "0 1px 3px 0 rgba(0,0,0,0.1)",
-                        }}
-                      />
-                      <Legend
-                        wrapperStyle={{ fontSize: "0.75rem", paddingTop: "0.5rem" }}
-                      />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Legend wrapperStyle={legendStyle} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Status Breakdown Pie/Donut Chart */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6">
+              <div className="ia-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-bold text-slate-900">
+                  <h2 className="text-base font-bold text-foreground">
                     Status Distribution
                   </h2>
-                  <span className="text-xs text-slate-500">All submissions</span>
+                  <span className="text-xs text-muted-foreground">
+                    All submissions
+                  </span>
                 </div>
                 <div className="h-64 sm:h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -380,18 +380,8 @@ export default function DashboardPage() {
                           />
                         ))}
                       </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#ffffff",
-                          borderColor: "#e2e8f0",
-                          borderRadius: "0.75rem",
-                          fontSize: "0.75rem",
-                          boxShadow: "0 1px 3px 0 rgba(0,0,0,0.1)",
-                        }}
-                      />
-                      <Legend
-                        wrapperStyle={{ fontSize: "0.75rem", paddingTop: "0.5rem" }}
-                      />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Legend wrapperStyle={legendStyle} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -399,16 +389,16 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Charts Row 2: State Breakdown & Urgency Distribution */}
           {isMounted && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* State Breakdown Bar Chart */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6">
+              <div className="ia-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-bold text-slate-900">
+                  <h2 className="text-base font-bold text-foreground">
                     Top Regional Hotspots
                   </h2>
-                  <span className="text-xs text-slate-500">By State / City</span>
+                  <span className="text-xs text-muted-foreground">
+                    By State / City
+                  </span>
                 </div>
                 <div className="h-64 sm:h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -416,39 +406,34 @@ export default function DashboardPage() {
                       data={stateData}
                       margin={{ top: 10, right: 10, left: -20, bottom: 20 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                       <XAxis
                         dataKey="state"
-                        tick={{ fontSize: 11, fill: "#64748b" }}
+                        tick={axisTick}
                         angle={-25}
                         textAnchor="end"
                         interval={0}
                       />
-                      <YAxis
-                        allowDecimals={false}
-                        tick={{ fontSize: 11, fill: "#64748b" }}
+                      <YAxis allowDecimals={false} tick={axisTick} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Bar
+                        dataKey="count"
+                        fill={isDark ? "#818cf8" : "#6366f1"}
+                        radius={[4, 4, 0, 0]}
                       />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#ffffff",
-                          borderColor: "#e2e8f0",
-                          borderRadius: "0.75rem",
-                          fontSize: "0.75rem",
-                        }}
-                      />
-                      <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Urgency Distribution Bar Chart */}
-              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6">
+              <div className="ia-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-bold text-slate-900">
+                  <h2 className="text-base font-bold text-foreground">
                     Urgency Severity (1-5)
                   </h2>
-                  <span className="text-xs text-slate-500">Excl. withdrawn</span>
+                  <span className="text-xs text-muted-foreground">
+                    Excl. withdrawn
+                  </span>
                 </div>
                 <div className="h-64 sm:h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -456,23 +441,10 @@ export default function DashboardPage() {
                       data={urgencyData}
                       margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis
-                        dataKey="level"
-                        tick={{ fontSize: 11, fill: "#64748b" }}
-                      />
-                      <YAxis
-                        allowDecimals={false}
-                        tick={{ fontSize: 11, fill: "#64748b" }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#ffffff",
-                          borderColor: "#e2e8f0",
-                          borderRadius: "0.75rem",
-                          fontSize: "0.75rem",
-                        }}
-                      />
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+                      <XAxis dataKey="level" tick={axisTick} />
+                      <YAxis allowDecimals={false} tick={axisTick} />
+                      <Tooltip contentStyle={tooltipStyle} />
                       <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                         {urgencyData.map((entry, index) => (
                           <Cell

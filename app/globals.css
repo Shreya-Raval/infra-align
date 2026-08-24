@@ -1,19 +1,12 @@
 /* 
  * InfraAlign Design System
- * 
- * Color Palette:
- * - Brand Primary: Indigo / Blue (#4f46e5 / #3b82f6)
- * - Backgrounds: Slate-50 (#f8fafc), White (#ffffff), Slate-100 (#f1f5f9)
- * - Text Defaults: Deep Slate (#0f172a / #1e293b) on light backgrounds
- * - Borders: Slate-200 (#e2e8f0), Slate-300 (#cbd5e1)
- * 
+ *
+ * Light: slate-50 canvas, white elevated cards, indigo primary
+ * Dark: slate-900 canvas (not pure black), slate-800 elevated cards,
+ *       off-white text, muted borders — elevation via surface steps
+ *
  * Semantic Status Badge Palette:
- * - registered:   Slate (#f1f5f9 bg, #334155 text, #cbd5e1 border)
- * - in progress:  Amber (#fef3c7 bg, #92400e text, #fcd34d border)
- * - closed:       Emerald (#dcfce7 bg, #166534 text, #86efac border)
- * - withdrawn:    Rose (#ffe4e6 bg, #9f1239 text, #fecdd3 border)
- * 
- * Any component using light text (white, light gray) must explicitly justify it with a dark background container.
+ * - registered / in progress / closed / withdrawn (see component maps)
  */
 
 @import "tailwindcss";
@@ -23,13 +16,56 @@
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --border: #e2e8f0;
+  --input: #f8fafc;
+  --ring: #4f46e5;
   --primary: #4f46e5;
   --primary-hover: #4338ca;
+  --primary-foreground: #ffffff;
+  --accent-soft: #eef2ff;
+  --accent-soft-foreground: #4338ca;
+  --accent-soft-border: #c7d2fe;
+}
+
+.dark {
+  /* Soft navy base — avoids OLED halation from pure black */
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  /* Elevated surface one step lighter than canvas */
+  --card: #1e293b;
+  --card-foreground: #f1f5f9;
+  --muted: #334155;
+  --muted-foreground: #94a3b8;
+  --border: #334155;
+  --input: #1e293b;
+  --ring: #818cf8;
+  --primary: #818cf8;
+  --primary-hover: #a5b4fc;
+  --primary-foreground: #0f172a;
+  --accent-soft: rgba(99, 102, 241, 0.15);
+  --accent-soft-foreground: #c7d2fe;
+  --accent-soft-border: rgba(129, 140, 248, 0.35);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-foreground: var(--accent-soft-foreground);
+  --color-accent-soft-border: var(--accent-soft-border);
   --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
 }
@@ -44,10 +80,95 @@ body {
 
 input,
 select,
-textarea,
-button {
+textarea {
   color: inherit;
   font-family: inherit;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* ── Shared surface utilities (light + dark) ── */
+@layer components {
+  .ia-card {
+    @apply bg-card text-card-foreground border border-border/90 shadow-sm rounded-2xl dark:shadow-none;
+  }
+
+  .ia-input {
+    @apply w-full rounded-xl border border-border bg-muted/50 text-foreground placeholder:text-muted-foreground
+      focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring/50
+      dark:bg-slate-900/50 dark:focus:bg-slate-900/80 transition-colors;
+  }
+
+  .ia-pill {
+    @apply text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  .ia-eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground mb-2;
+  }
+
+  .ia-heading {
+    @apply text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight;
+  }
+
+  .ia-subtext {
+    @apply text-xs sm:text-sm text-muted-foreground;
+  }
+
+  .ia-label {
+    @apply text-sm font-medium text-foreground/80;
+  }
+
+  /* Primary CTAs — brand indigo, always white label */
+  .ia-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-sm
+      bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.99]
+      dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400
+      disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
+      shadow-sm transition-all;
+  }
+
+  /* Secondary / quiet actions */
+  .ia-btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold text-xs
+      bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900
+      dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700
+      shadow-xs transition-colors;
+  }
+
+  /* Nav chrome — readable slate, not washed gray */
+  .ia-nav-link {
+    @apply px-3.5 py-1.5 rounded-lg text-sm font-medium text-slate-600
+      hover:text-slate-900 hover:bg-slate-100 transition-colors
+      dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800;
+  }
+
+  .ia-nav-link-active {
+    @apply px-3.5 py-1.5 rounded-lg text-sm font-semibold text-indigo-700 bg-indigo-50
+      dark:text-indigo-300 dark:bg-indigo-500/15;
+  }
+
+  .ia-alert-success {
+    @apply rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800
+      dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300;
+  }
+
+  .ia-alert-error {
+    @apply rounded-xl border border-rose-200 bg-rose-50 text-rose-800
+      dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300;
+  }
+
+  .ia-alert-warning {
+    @apply rounded-xl border border-amber-200 bg-amber-50 text-amber-800
+      dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300;
+  }
+
+  .ia-alert-info {
+    @apply rounded-xl border border-blue-200 bg-blue-50 text-blue-800
+      dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300;
+  }
 }
 
 @keyframes pulse-ring {
@@ -75,7 +196,7 @@ button {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--muted);
 }
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
@@ -83,4 +204,23 @@ button {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Leaflet popup theming when dark */
+.dark .leaflet-popup-content-wrapper,
+.dark .leaflet-popup-tip {
+  background: var(--card);
+  color: var(--card-foreground);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.dark .leaflet-container a {
+  color: var(--primary);
 }

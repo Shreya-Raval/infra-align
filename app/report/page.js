@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
-import { supabase } from "@/lib/supabase";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   collection,
@@ -13,9 +12,11 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
+import LocationFields from "@/components/LocationFields";
 
 export default function ReportPage() {
   const router = useRouter();
+  const locationRef = useRef(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -25,8 +26,6 @@ export default function ReportPage() {
   const [pincode, setPincode] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
-  const [isLookingUpPincode, setIsLookingUpPincode] = useState(false);
-  const [pincodeError, setPincodeError] = useState("");
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [deviceLocation, setDeviceLocation] = useState(null);
   const [selectedImages, setSelectedImages] = useState([]);
@@ -75,50 +74,6 @@ export default function ReportPage() {
 
     return () => unsubscribeAuth();
   }, [router]);
-
-  // Pincode auto-lookup
-  const handlePincodeChange = (e) => {
-    const value = e.target.value.replace(/\D/g, "").slice(0, 6);
-    setPincode(value);
-    setPincodeError("");
-
-    if (value.length === 6) {
-      lookupPincode(value);
-    }
-  };
-
-  const lookupPincode = async (code) => {
-    setIsLookingUpPincode(true);
-    setPincodeError("");
-
-    try {
-      const res = await fetch(`https://api.postalpincode.in/pincode/${code}`);
-      const data = await res.json();
-
-      if (
-        Array.isArray(data) &&
-        data.length > 0 &&
-        data[0].Status === "Success" &&
-        Array.isArray(data[0].PostOffice) &&
-        data[0].PostOffice.length > 0
-      ) {
-        const postOffice = data[0].PostOffice[0];
-        setCity(postOffice.District || postOffice.Name || "");
-        setState(postOffice.State || "");
-      } else {
-        setPincodeError(
-          "Pincode details not found automatically. You can enter City and State manually."
-        );
-      }
-    } catch (err) {
-      console.error("Pincode lookup error:", err);
-      setPincodeError(
-        "Could not verify pincode online. Please enter City and State manually."
-      );
-    } finally {
-      setIsLookingUpPincode(false);
-    }
-  };
 
   // Geolocation
   useEffect(() => {
@@ -292,6 +247,12 @@ export default function ReportPage() {
       return;
     }
 
+    const locationError = await locationRef.current?.validateAsync();
+    if (locationError) {
+      setError(locationError);
+      return;
+    }
+
     setError("");
     setWarning("");
     setModerationWarning("");
@@ -299,9 +260,9 @@ export default function ReportPage() {
     setIsSubmitting(true);
 
     try {
-      const currentPincode = pincode.trim() || null;
-      const currentCity = city.trim() || null;
-      const currentState = state.trim() || null;
+      const currentPincode = pincode.trim();
+      const currentCity = city.trim();
+      const currentState = state.trim();
 
       const res = await fetch("/api/tag-complaint", {
         method: "POST",
@@ -382,26 +343,30 @@ export default function ReportPage() {
             continue; // Skip uploading this unsafe image
           }
 
-          // 2. Upload to Supabase Storage
+          // 2. Upload via server (service role bypasses Supabase Storage RLS)
           try {
-            const filePath = `${complaintId}/${i}-${img.file.name}`;
-            const { error: uploadError } = await supabase.storage
-              .from("complaint-images")
-              .upload(filePath, img.file, {
-                cacheControl: "3600",
-                upsert: false,
-              });
+            const idToken = await currentUser.getIdToken();
+            const uploadForm = new FormData();
+            uploadForm.append("image", img.file);
+            uploadForm.append("complaintId", complaintId);
+            uploadForm.append("index", String(i));
 
-            if (uploadError) {
-              throw uploadError;
+            const uploadRes = await fetch("/api/upload-complaint-image", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: uploadForm,
+            });
+
+            const uploadData = await uploadRes.json().catch(() => ({}));
+
+            if (!uploadRes.ok) {
+              throw new Error(uploadData.error || "Failed to upload image.");
             }
 
-            const { data: urlData } = supabase.storage
-              .from("complaint-images")
-              .getPublicUrl(filePath);
-
-            if (urlData?.publicUrl) {
-              imageUrls.push(urlData.publicUrl);
+            if (uploadData?.publicUrl) {
+              imageUrls.push(uploadData.publicUrl);
             }
           } catch (uploadErr) {
             console.error(`Failed to upload image ${img.file.name}:`, uploadErr);
@@ -484,50 +449,48 @@ export default function ReportPage() {
     <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
       {/* Header Banner */}
       <div className="text-center max-w-2xl mx-auto mb-10">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60 mb-3">
-          <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
-          Multilingual Citizen Voice Portal
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+        <p className="ia-eyebrow">Submit</p>
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
           Report a Civic Issue
         </h1>
-        <p className="mt-2.5 text-sm sm:text-base text-slate-600 leading-relaxed">
-          Submit roads, water, electricity, or healthcare concerns. Our multilingual AI classifies, geocodes, and routes complaints to public infrastructure priority queues.
+        <p className="mt-2.5 text-sm sm:text-base text-muted-foreground leading-relaxed">
+          Describe roads, water, electricity, or healthcare concerns. Issues are
+          classified, geocoded, and routed to the priority queue.
         </p>
       </div>
 
       {/* Auth Gating: Form when signed in, Login Callout when unauthenticated */}
       {authChecking ? (
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-8 mb-12 text-center text-sm text-slate-500">
+        <div className="ia-card p-8 mb-12 text-center text-sm text-muted-foreground">
           <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
           Loading user status...
         </div>
       ) : currentUser ? (
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8">
-          <div className="flex items-center justify-between gap-3 pb-4 mb-5 border-b border-slate-100 flex-wrap">
-            <div className="text-xs text-slate-600">
-              Reporting as: <strong className="text-slate-900">{userProfile?.firstName ? `${userProfile.firstName} ${userProfile.lastName || ""}` : currentUser.email}</strong>
+        <div className="ia-card p-6 sm:p-8">
+          <div className="flex items-center justify-between gap-3 pb-4 mb-5 border-b border-border/60 flex-wrap">
+            <div className="text-xs text-muted-foreground">
+              Reporting as: <strong className="text-foreground">{userProfile?.firstName ? `${userProfile.firstName} ${userProfile.lastName || ""}` : currentUser.email}</strong>
             </div>
-            <div className="text-xs text-slate-500">
-              📍 {city ? `${city}, ${state}` : userProfile?.city ? `${userProfile.city}, ${userProfile.state}` : "Registered User"} {pincode ? `(${pincode})` : ""}
+            <div className="text-xs text-muted-foreground">
+              {city ? `${city}, ${state}` : userProfile?.city ? `${userProfile.city}, ${userProfile.state}` : "Registered User"}{pincode ? ` (${pincode})` : ""}
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* 1. File / Image Upload Picker */}
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">
-                Attach Photos <span className="text-xs font-normal text-slate-500">(Up to 10 photos, max 5MB each)</span>
+              <label className="block text-sm font-semibold text-foreground/90 mb-2">
+                Attach Photos <span className="text-xs font-normal text-muted-foreground">(Up to 10 photos, max 5MB each)</span>
               </label>
 
               <div className="flex items-center gap-3">
                 <label
                   htmlFor="photo-upload"
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 cursor-pointer transition-colors ${
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-border bg-muted dark:bg-slate-900/40 text-foreground/80 hover:bg-muted hover:text-foreground cursor-pointer transition-colors ${
                     isSubmitting || selectedImages.length >= 10 ? "opacity-50 cursor-not-allowed" : ""
                   }`}
                 >
-                  <span>📷</span> Add Photos
+                  Add photos
                 </label>
                 <input
                   id="photo-upload"
@@ -539,18 +502,18 @@ export default function ReportPage() {
                   disabled={isSubmitting || selectedImages.length >= 10}
                   className="hidden"
                 />
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-muted-foreground">
                   {selectedImages.length > 0 ? `${selectedImages.length} photo(s) selected` : "No photos attached yet"}
                 </span>
               </div>
 
               {/* Thumbnail Preview Strip */}
               {selectedImages.length > 0 && (
-                <div className="flex flex-wrap gap-3 mt-3.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="flex flex-wrap gap-3 mt-3.5 p-3 rounded-xl bg-muted dark:bg-slate-900/40 border border-border">
                   {selectedImages.map((img, index) => (
                     <div
                       key={index}
-                      className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-300 shadow-xs group"
+                      className="relative w-16 h-16 rounded-lg overflow-hidden border border-border shadow-xs group"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -575,8 +538,8 @@ export default function ReportPage() {
 
             {/* 2. Voice Recording Action */}
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">
-                Voice Input <span className="text-xs font-normal text-slate-500">(Optional - speak your complaint in any language)</span>
+              <label className="block text-sm font-semibold text-foreground/90 mb-2">
+                Voice Input <span className="text-xs font-normal text-muted-foreground">(Optional - speak your complaint in any language)</span>
               </label>
               <button
                 type="button"
@@ -585,11 +548,10 @@ export default function ReportPage() {
                 className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-xs ${
                   isRecording
                     ? "bg-rose-600 hover:bg-rose-700 text-white animate-pulse"
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300/80"
+                    : "bg-muted hover:bg-muted text-foreground/90 border border-border/80"
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
-                <span>{isRecording ? "⏹" : "🎤"}</span>
-                <span>{isRecording ? "Stop Recording" : "Record Voice Complaint"}</span>
+                <span>{isRecording ? "Stop recording" : "Record voice complaint"}</span>
               </button>
 
               {/* Voice Status Indicators */}
@@ -601,7 +563,7 @@ export default function ReportPage() {
               )}
 
               {isTranscribing && (
-                <div className="flex items-center gap-2 text-indigo-600 text-xs font-semibold mt-2">
+                <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-xs font-semibold mt-2">
                   <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                   Transcribing voice recording via Gemini...
                 </div>
@@ -611,10 +573,10 @@ export default function ReportPage() {
             {/* 3. Complaint Description Textarea */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label htmlFor="complaint-text" className="block text-sm font-semibold text-slate-800">
+                <label htmlFor="complaint-text" className="block text-sm font-semibold text-foreground/90">
                   Complaint Description <span className="text-rose-500">*</span>
                 </label>
-                <span className="text-xs text-slate-500">Any language supported</span>
+                <span className="text-xs text-muted-foreground">Any language supported</span>
               </div>
 
               <textarea
@@ -623,98 +585,43 @@ export default function ReportPage() {
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Describe the issue in detail (e.g. Broken water pipeline near Metro station, overflowing garbage)..."
                 rows={4}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
+                className="w-full px-4 py-3 rounded-xl border border-border bg-muted/50 dark:bg-slate-900/40 text-foreground placeholder:text-muted-foreground focus:bg-card focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
               />
             </div>
 
             {/* Landmark / Address Detail (Optional) */}
             <div>
-              <label htmlFor="area-location" className="block text-sm font-semibold text-slate-800 mb-2">
-                Landmark / Address Detail <span className="text-xs font-normal text-slate-500">(optional)</span>
+              <label htmlFor="area-location" className="block text-sm font-semibold text-foreground/90 mb-2">
+                Landmark / Address Detail <span className="text-xs font-normal text-muted-foreground">(optional)</span>
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-3.5 text-slate-400 text-base">📍</span>
                 <input
                   id="area-location"
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   placeholder="e.g. Near Metro Station, opposite the market"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
+                  className="w-full px-4 py-2.5 rounded-xl border border-border bg-muted/50 dark:bg-slate-900/40 text-foreground placeholder:text-muted-foreground focus:bg-card focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm sm:text-base"
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+              <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
                 <span>ℹ️</span> We correlate device location coordinates in the background to assist automated geocoding.
               </p>
             </div>
 
-            {/* 4. Pincode, City, State Fields */}
-            <div className="space-y-4 pt-1">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label htmlFor="report-pincode" className="block text-xs font-semibold text-slate-700">
-                    Pincode <span className="text-slate-400 font-normal">(Auto-detects City & State)</span>
-                  </label>
-                  <span className="text-[11px] text-slate-500">6 digits</span>
-                </div>
-
-                <div className="relative">
-                  <input
-                    id="report-pincode"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={pincode}
-                    onChange={handlePincodeChange}
-                    placeholder="400053"
-                    disabled={isSubmitting}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm font-medium tracking-wide focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all pr-10"
-                  />
-                  {isLookingUpPincode && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
-                </div>
-
-                {pincodeError && (
-                  <p className="text-xs text-amber-700 mt-1.5 font-medium">
-                    ⚠️ {pincodeError}
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="report-city" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    City / District
-                  </label>
-                  <input
-                    id="report-city"
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="Mumbai"
-                    disabled={isSubmitting}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="report-state" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    State
-                  </label>
-                  <input
-                    id="report-state"
-                    type="text"
-                    value={state}
-                    onChange={(e) => setState(e.target.value)}
-                    placeholder="Maharashtra"
-                    disabled={isSubmitting}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder:text-slate-400 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
-                  />
-                </div>
-              </div>
+            <div className="pt-1">
+              <LocationFields
+                ref={locationRef}
+                idPrefix="report"
+                pincode={pincode}
+                city={city}
+                state={state}
+                onPincodeChange={setPincode}
+                onCityChange={setCity}
+                onStateChange={setState}
+                disabled={isSubmitting}
+                pincodeHint="Auto-detects city & state"
+              />
             </div>
 
             {/* Anonymous Submission Checkbox */}
@@ -725,11 +632,11 @@ export default function ReportPage() {
                 checked={isAnonymous}
                 onChange={(e) => setIsAnonymous(e.target.checked)}
                 disabled={isSubmitting}
-                className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 border-slate-300 cursor-pointer"
+                className="rounded text-indigo-600 dark:text-indigo-400 focus:ring-indigo-500 w-4 h-4 border-border cursor-pointer"
               />
               <label
                 htmlFor="anonymous-checkbox"
-                className="text-sm font-medium text-slate-700 cursor-pointer select-none"
+                className="text-sm font-medium text-foreground/80 cursor-pointer select-none"
               >
                 Submit anonymously
               </label>
@@ -737,7 +644,7 @@ export default function ReportPage() {
 
             {/* Upload Progress */}
             {uploadProgress && (
-              <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm flex items-center gap-2">
+              <div className="p-3 rounded-xl ia-alert-info text-sm flex items-center gap-2">
                 <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                 {uploadProgress}
               </div>
@@ -745,25 +652,25 @@ export default function ReportPage() {
 
             {/* Moderation Removal Notice */}
             {moderationWarning && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm">
+              <div className="p-3 rounded-xl ia-alert-error text-sm">
                 🛡️ {moderationWarning}
               </div>
             )}
 
             {/* Storage Upload Warning */}
             {warning && (
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-                ⚠️ {warning}
+              <div className="p-3 rounded-xl ia-alert-warning text-sm">
+                {warning}
               </div>
             )}
 
             {/* Success Message */}
             {successMessage && (
-              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium flex items-center justify-between gap-3">
+              <div className="p-3.5 rounded-xl ia-alert-success text-sm font-medium flex items-center justify-between gap-3">
                 <span>✅ {successMessage}</span>
                 <Link
                   href="/feed"
-                  className="underline font-semibold hover:text-emerald-900 shrink-0"
+                  className="underline font-semibold hover:text-emerald-900 dark:text-emerald-200 shrink-0"
                 >
                   View Feed →
                 </Link>
@@ -772,7 +679,7 @@ export default function ReportPage() {
 
             {/* Error Message */}
             {error && (
-              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium">
+              <div className="p-3.5 rounded-xl ia-alert-error text-sm font-medium">
                 ❌ {error}
               </div>
             )}
@@ -781,7 +688,7 @@ export default function ReportPage() {
             <button
               type="submit"
               disabled={isSubmitting || isRecording || isTranscribing}
-              className="w-full py-3 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-base shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="ia-btn-primary w-full py-3 text-base"
             >
               {isSubmitting ? (
                 <>
@@ -796,21 +703,24 @@ export default function ReportPage() {
         </div>
       ) : (
         /* Sign In Prompt Callout */
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-8 text-center">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-2xl mx-auto mb-3">
-            🔒
+        <div className="ia-card p-8 text-center">
+          <div className="w-12 h-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground mx-auto mb-3">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2" />
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+            </svg>
           </div>
-          <h2 className="text-lg font-bold text-slate-900 mb-1">
+          <h2 className="text-lg font-bold text-foreground mb-1">
             Sign in to submit a complaint
           </h2>
-          <p className="text-sm text-slate-600 mb-5 max-w-md mx-auto">
-            You must be signed in to submit civic issues to municipal queues. You can still choose to submit anonymously when submitting.
+          <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
+            You must be signed in to submit civic issues. You can still choose to submit anonymously on the form.
           </p>
           <Link
             href="/login"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm hover:shadow transition-all"
+            className="ia-btn-primary px-5 py-2.5"
           >
-            Sign In with Email Link →
+            Sign in with email
           </Link>
         </div>
       )}

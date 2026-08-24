@@ -1,95 +1,47 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   MapContainer,
   TileLayer,
-  Marker,
-  Popup,
   CircleMarker,
-  LayersControl,
-  LayerGroup,
+  Popup,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
-import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import Papa from "papaparse";
 
-import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
-import iconUrl from "leaflet/dist/images/marker-icon.png";
-import shadowUrl from "leaflet/dist/images/marker-shadow.png";
-
-import { db, auth } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { countryConfig } from "@/lib/countryConfig";
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: typeof iconRetinaUrl === "string" ? iconRetinaUrl : iconRetinaUrl.src,
-  iconUrl: typeof iconUrl === "string" ? iconUrl : iconUrl.src,
-  shadowUrl: typeof shadowUrl === "string" ? shadowUrl : shadowUrl.src,
-});
-
-function StatusBadge({ status }) {
-  const currentStatus = (status || "registered").toLowerCase();
-
-  const statusConfig = {
-    registered: {
-      bg: "bg-slate-100",
-      text: "text-slate-700",
-      border: "border-slate-200",
-      label: "Registered",
-    },
-    "in progress": {
-      bg: "bg-amber-50",
-      text: "text-amber-800",
-      border: "border-amber-200",
-      label: "In Progress",
-    },
-    closed: {
-      bg: "bg-emerald-50",
-      text: "text-emerald-800",
-      border: "border-emerald-200",
-      label: "Closed",
-    },
-    withdrawn: {
-      bg: "bg-rose-50",
-      text: "text-rose-800",
-      border: "border-rose-200",
-      label: "Withdrawn",
-    },
-  };
-
-  const current = statusConfig[currentStatus] || statusConfig.registered;
-
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${current.bg} ${current.text} ${current.border}`}
-    >
-      {current.label}
-    </span>
-  );
-}
+import {
+  aggregateComplaintRegions,
+  isActiveComplaint,
+  isGeocodedComplaint,
+} from "@/lib/complaintGeo";
+import {
+  CATEGORY_COLORS,
+  CATEGORY_ORDER,
+  CITY_ZOOM_THRESHOLD,
+  getBubbleOpacity,
+  getBubbleRadius,
+  getCategoryColor,
+} from "@/lib/mapTheme";
+import { useTheme } from "next-themes";
 
 function MapResizeHandler() {
   const map = useMap();
 
   useEffect(() => {
     map.invalidateSize();
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 150);
+    const timer = setTimeout(() => map.invalidateSize(), 150);
 
     const container = map.getContainer();
     if (!container || typeof ResizeObserver === "undefined") {
       return () => clearTimeout(timer);
     }
 
-    const observer = new ResizeObserver(() => {
-      map.invalidateSize();
-    });
-
+    const observer = new ResizeObserver(() => map.invalidateSize());
     observer.observe(container);
 
     return () => {
@@ -101,91 +53,216 @@ function MapResizeHandler() {
   return null;
 }
 
-function MapViewController({ center, zoom }) {
+function MapNavigationController({ config, resetCounter }) {
   const map = useMap();
 
   useEffect(() => {
-    if (center && zoom) {
-      map.setView(center, zoom, { animate: true });
+    map.setView(config.mapCenter, config.mapZoom, { animate: false });
+  }, [config.mapCenter, config.mapZoom, map]);
+
+  useEffect(() => {
+    if (resetCounter > 0) {
+      map.flyTo(config.mapCenter, config.mapZoom, { duration: 0.75 });
     }
-  }, [center, zoom, map]);
+  }, [resetCounter, config.mapCenter, config.mapZoom, map]);
 
   return null;
 }
 
-function getHospitalRadius(count) {
-  const minR = 6;
-  const maxR = 30;
-  const minSqrt = Math.sqrt(50);
-  const maxSqrt = Math.sqrt(4500);
-  const countSqrt = Math.sqrt(Math.max(count || 0, 50));
-  return minR + ((countSqrt - minSqrt) / (maxSqrt - minSqrt)) * (maxR - minR);
+function ZoomTracker({ onZoomChange }) {
+  const map = useMap();
+
+  useMapEvents({
+    zoomend: () => onZoomChange(map.getZoom()),
+  });
+
+  useEffect(() => {
+    onZoomChange(map.getZoom());
+  }, [map, onZoomChange]);
+
+  return null;
+}
+
+function RegionPopupContent({ region }) {
+  const breakdown = CATEGORY_ORDER.filter(
+    (cat) => region.categoryCounts[cat] > 0
+  ).concat(
+    Object.keys(region.categoryCounts).filter(
+      (cat) => !CATEGORY_ORDER.includes(cat) && region.categoryCounts[cat] > 0
+    )
+  );
+
+  return (
+    <div className="text-xs leading-relaxed space-y-2 min-w-[200px]">
+      <div>
+        <div className="font-bold text-foreground text-sm">{region.name}</div>
+        {region.level === "city" && region.state && (
+          <div className="text-muted-foreground text-[11px]">{region.state}</div>
+        )}
+        <div className="text-muted-foreground mt-0.5">
+          {region.count} active report{region.count === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      <div className="pt-1 border-t border-border/60 space-y-1.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Category mix
+        </div>
+        {breakdown.map((cat) => {
+          const n = region.categoryCounts[cat];
+          const pct = Math.round((n / region.count) * 100);
+          return (
+            <div key={cat} className="space-y-0.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 font-medium text-foreground/90">
+                  <span
+                    className="inline-block w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: getCategoryColor(cat) }}
+                  />
+                  {cat}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {n} ({pct}%)
+                </span>
+              </div>
+              <div className="h-1 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: getCategoryColor(cat),
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/60">
+        Dominant:{" "}
+        <span className="font-semibold" style={{ color: getCategoryColor(region.dominantCategory) }}>
+          {region.dominantCategory}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MapLegend({ mode, focusedState }) {
+  return (
+    <div className="mt-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+        <span>
+          {mode === "city"
+            ? focusedState
+              ? `City breakdown · ${focusedState}`
+              : "City breakdown"
+            : "State breakdown · click a state to drill down"}
+        </span>
+        <span className="hidden sm:inline text-border">|</span>
+        <span>Size &amp; brightness = volume</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-[11px]">
+        {CATEGORY_ORDER.map((cat) => (
+          <span key={cat} className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ backgroundColor: CATEGORY_COLORS[cat] }}
+            />
+            {cat}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function ComplaintsMap({ country = "IN" }) {
   const config = countryConfig[country] || countryConfig.IN;
-  const [currentUser, setCurrentUser] = useState(null);
-  const [complaints, setComplaints] = useState([]);
-  const [hospitals, setHospitals] = useState([]);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-    });
-    return () => unsubscribeAuth();
-  }, []);
+  const [complaints, setComplaints] = useState([]);
+  const [mapZoom, setMapZoom] = useState(config.mapZoom);
+  const [focusedState, setFocusedState] = useState(null);
+  const [resetCounter, setResetCounter] = useState(0);
 
   useEffect(() => {
     const q = query(collection(db, "complaints"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setComplaints(data);
+      setComplaints(
+        snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+      );
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    fetch("/data/govt_hospitals_by_state.csv")
-      .then((res) => res.text())
-      .then((csvText) => {
-        Papa.parse(csvText, {
-          header: true,
-          dynamicTyping: true,
-          skipEmptyLines: true,
-          complete: (results) => {
-            const validData = (results.data || []).filter(
-              (row) =>
-                row.state &&
-                typeof row.lat === "number" &&
-                typeof row.lng === "number" &&
-                typeof row.govt_hospitals_total === "number"
-            );
-            setHospitals(validData);
-          },
-          error: (err) => {
-            console.error("Error parsing hospital CSV:", err);
-          },
-        });
-      })
-      .catch((err) => {
-        console.error("Error fetching hospital CSV:", err);
-      });
+    setFocusedState(null);
+    setResetCounter((c) => c + 1);
+  }, [country]);
+
+  const activeGeocoded = useMemo(
+    () => complaints.filter((c) => isGeocodedComplaint(c) && isActiveComplaint(c)),
+    [complaints]
+  );
+
+  const showCityLevel =
+    focusedState !== null || mapZoom >= CITY_ZOOM_THRESHOLD;
+
+  const regions = useMemo(
+    () =>
+      aggregateComplaintRegions(
+        activeGeocoded,
+        showCityLevel ? "city" : "state",
+        focusedState
+      ),
+    [activeGeocoded, showCityLevel, focusedState]
+  );
+
+  const maxCount = useMemo(
+    () => (regions.length ? Math.max(...regions.map((r) => r.count)) : 1),
+    [regions]
+  );
+
+  const handleZoomChange = useCallback((zoom) => {
+    setMapZoom(zoom);
+    if (zoom < CITY_ZOOM_THRESHOLD) {
+      setFocusedState(null);
+    }
   }, []);
 
-  const validComplaints = complaints.filter(
-    (c) =>
-      typeof c.lat === "number" &&
-      typeof c.lng === "number" &&
-      !isNaN(c.lat) &&
-      !isNaN(c.lng)
-  );
+  const handleStateFocus = useCallback((region, map) => {
+    if (region.level !== "state") return;
+    setFocusedState(region.name);
+    map.flyTo(region.center, CITY_ZOOM_THRESHOLD, { duration: 0.75 });
+  }, []);
 
   return (
     <div>
-      <div className="h-[70vh] min-h-[450px] w-full rounded-2xl overflow-hidden border border-slate-200/90 shadow-sm relative bg-slate-100">
+      {focusedState && (
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Showing cities in <strong className="text-foreground">{focusedState}</strong>
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setFocusedState(null);
+              setResetCounter((c) => c + 1);
+            }}
+            className="ia-btn-secondary px-3 py-1.5 text-xs cursor-pointer"
+          >
+            View all states
+          </button>
+        </div>
+      )}
+
+      <div className="h-[70vh] min-h-[450px] w-full rounded-2xl overflow-hidden border border-border/90 shadow-sm relative bg-muted">
         <MapContainer
           center={config.mapCenter}
           zoom={config.mapZoom}
@@ -193,110 +270,77 @@ export default function ComplaintsMap({ country = "IN" }) {
           className="h-full w-full"
         >
           <MapResizeHandler />
-          <MapViewController center={config.mapCenter} zoom={config.mapZoom} />
+          <MapNavigationController config={config} resetCounter={resetCounter} />
+          <ZoomTracker onZoomChange={handleZoomChange} />
+
           <TileLayer
+            key={isDark ? "dark" : "light"}
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            url={
+              isDark
+                ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            }
           />
 
-          <LayersControl position="topright">
-            <LayersControl.Overlay checked name="Government Hospitals">
-              <LayerGroup>
-                {hospitals.map((h) => (
-                  <CircleMarker
-                    key={h.state}
-                    center={[h.lat, h.lng]}
-                    radius={getHospitalRadius(h.govt_hospitals_total)}
-                    pathOptions={{
-                      color: "#ea580c",
-                      fillColor: "#f97316",
-                      fillOpacity: 0.35,
-                      weight: 1.5,
-                    }}
-                  >
-                    <Popup>
-                      <div className="text-xs leading-relaxed">
-                        <strong className="font-semibold text-slate-900">{h.state}</strong> —{" "}
-                        <span className="text-orange-700 font-medium">
-                          {h.govt_hospitals_total?.toLocaleString()} government hospitals
-                        </span>
-                      </div>
-                    </Popup>
-                  </CircleMarker>
-                ))}
-              </LayerGroup>
-            </LayersControl.Overlay>
-          </LayersControl>
-
-          {validComplaints.map((c) => {
-            const truncatedText =
-              c.text && c.text.length > 100
-                ? `${c.text.slice(0, 100)}...`
-                : c.text;
-
-            const isOwner =
-              currentUser &&
-              c.userId &&
-              currentUser.uid === c.userId;
-
-            return (
-              <Marker key={c.id} position={[c.lat, c.lng]}>
-                <Popup>
-                  <div className="text-xs leading-relaxed space-y-1.5 min-w-[180px]">
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1">
-                      {c.location ? (
-                        <div className="font-bold text-slate-900 text-xs">
-                          📍 {c.location}
-                        </div>
-                      ) : <div />}
-                      <StatusBadge status={c.status} />
-                    </div>
-
-                    {truncatedText && (
-                      <div className="text-slate-800 text-xs font-normal">
-                        {truncatedText}
-                      </div>
-                    )}
-
-                    {/* Submitter and Category row */}
-                    <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                      {c.category ? (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-semibold text-indigo-700">{c.category}</span>
-                          {c.urgency !== undefined && c.urgency !== null && (
-                            <span className="text-slate-600 font-medium">(Urgency: {c.urgency}/5)</span>
-                          )}
-                        </div>
-                      ) : (
-                        <em className="text-slate-400">Tagging...</em>
-                      )}
-
-                      {/* Submitter info */}
-                      {c.isAnonymous === true ? (
-                        <span className="italic text-slate-500">Anonymous</span>
-                      ) : c.isAnonymous === false && c.submitterName ? (
-                        <span className="text-slate-600 font-medium">Reported by {c.submitterName}</span>
-                      ) : null}
-                    </div>
-
-                    {/* Duplicate Flag Note — visible only to owner */}
-                    {isOwner && c.isDuplicateFlag && (
-                      <div className="text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded mt-1">
-                        ⚠️ Possible duplicate — you have another open complaint in this category/area.
-                      </div>
-                    )}
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
+          {regions.map((region) => (
+            <RegionBubble
+              key={region.key}
+              region={region}
+              maxCount={maxCount}
+              isCity={showCityLevel}
+              onStateFocus={handleStateFocus}
+            />
+          ))}
         </MapContainer>
+
+        {regions.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <p className="text-sm text-muted-foreground bg-card/90 border border-border rounded-xl px-4 py-3 shadow-sm">
+              No geocoded active complaints to display yet.
+            </p>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2.5 px-1">
-        <span>🏥</span>
-        <span>{config.infraLabel}</span>
-      </div>
+      <MapLegend mode={showCityLevel ? "city" : "state"} focusedState={focusedState} />
     </div>
+  );
+}
+
+function RegionBubble({ region, maxCount, isCity, onStateFocus }) {
+  const map = useMap();
+  const fill = getCategoryColor(region.dominantCategory);
+  const radius = getBubbleRadius(region.count, maxCount, isCity);
+  const fillOpacity = getBubbleOpacity(region.count, maxCount);
+
+  return (
+    <CircleMarker
+      center={region.center}
+      radius={radius}
+      pathOptions={{
+        color: fill,
+        fillColor: fill,
+        fillOpacity,
+        weight: 2,
+        opacity: 0.95,
+      }}
+      eventHandlers={{
+        click: () => {
+          if (region.level === "state") {
+            onStateFocus(region, map);
+          }
+        },
+      }}
+    >
+      <Popup>
+        <RegionPopupContent region={region} />
+        {region.level === "state" && (
+          <p className="text-[10px] text-muted-foreground mt-2 pt-2 border-t border-border/60">
+            Click the circle to explore cities in this state.
+          </p>
+        )}
+      </Popup>
+    </CircleMarker>
   );
 }

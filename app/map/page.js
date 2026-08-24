@@ -7,7 +7,7 @@ import { countryConfig } from "@/lib/countryConfig";
 const ComplaintsMap = dynamic(() => import("@/components/ComplaintsMap"), {
   ssr: false,
   loading: () => (
-    <div className="h-[70vh] min-h-[450px] w-full rounded-2xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-slate-500 text-sm gap-2">
+    <div className="h-[70vh] min-h-[450px] w-full rounded-2xl bg-muted border border-border flex flex-col items-center justify-center text-muted-foreground text-sm gap-2">
       <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
       <span>Loading Geographic Map...</span>
     </div>
@@ -102,10 +102,8 @@ export default function MapPage() {
       {/* Header & Controls Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60 mb-1.5">
-            Geographic Spatial Analysis
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <p className="ia-eyebrow">Map</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
             Infrastructure & Complaint Map
           </h1>
         </div>
@@ -117,22 +115,22 @@ export default function MapPage() {
             <select
               value={selectedCountry}
               onChange={(e) => setSelectedCountry(e.target.value)}
-              className="appearance-none bg-white border border-slate-300 rounded-xl px-4 py-2 pr-9 text-sm font-medium text-slate-900 shadow-xs hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all cursor-pointer"
+              className="appearance-none bg-card border border-border rounded-xl px-4 py-2 pr-9 text-sm font-medium text-foreground shadow-xs hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all cursor-pointer"
             >
               {Object.entries(countryConfig).map(([code, c]) => (
-                <option key={code} value={code} className="text-slate-900 bg-white">
-                  🌐 {c.name}
+                <option key={code} value={code} className="text-foreground bg-card">
+                  {c.name}
                 </option>
               ))}
             </select>
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
               ▼
             </span>
           </div>
 
           {/* Last generated timestamp indicator */}
           {generatedAt && (
-            <span className="hidden sm:inline-flex text-xs font-medium text-slate-500 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+            <span className="hidden sm:inline-flex text-xs font-medium text-muted-foreground bg-muted px-3 py-2 rounded-xl border border-border">
               Updated: {new Date(generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
@@ -141,7 +139,7 @@ export default function MapPage() {
           <button
             onClick={handleGenerateReport}
             disabled={isLoading || isInitialLoading}
-            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-semibold text-sm shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ia-btn-primary px-4 sm:px-5 py-2"
           >
             {isLoading ? (
               <>
@@ -163,14 +161,14 @@ export default function MapPage() {
 
       {/* Error alert */}
       {!isLoading && !isInitialLoading && error && (
-        <div className="mt-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium">
+        <div className="mt-6 p-4 rounded-xl ia-alert-error text-sm font-medium">
           ❌ {error}
         </div>
       )}
 
       {/* Info message */}
       {!isLoading && !isInitialLoading && reportMessage && (!report || report.length === 0) && (
-        <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+        <div className="mt-6 p-4 rounded-xl ia-alert-warning text-sm">
           ℹ️ {reportMessage}
         </div>
       )}
@@ -179,27 +177,27 @@ export default function MapPage() {
       {(isLoading || isInitialLoading) && (
         <section className="mt-10 min-h-[320px] space-y-4">
           <div className="flex items-center gap-2">
-            <div className="h-6 w-52 bg-slate-200 rounded-md animate-pulse" />
-            <div className="h-4 w-24 bg-slate-200 rounded-md animate-pulse" />
+            <div className="h-6 w-52 bg-slate-200 dark:bg-slate-700 rounded-md animate-pulse" />
+            <div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded-md animate-pulse" />
           </div>
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="bg-white rounded-xl border border-slate-200 p-5 space-y-3"
+                className="ia-card rounded-xl p-5 space-y-3"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-slate-200 animate-pulse" />
+                  <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" />
                   <div
-                    className="h-5 bg-slate-200 rounded-md animate-pulse"
+                    className="h-5 bg-slate-200 dark:bg-slate-700 rounded-md animate-pulse"
                     style={{ width: `${45 + i * 15}%` }}
                   />
                 </div>
-                <div className="h-4 w-full bg-slate-100 rounded-md animate-pulse" />
-                <div className="h-4 w-3/4 bg-slate-100 rounded-md animate-pulse" />
+                <div className="h-4 w-full bg-muted rounded-md animate-pulse" />
+                <div className="h-4 w-3/4 bg-muted rounded-md animate-pulse" />
                 <div className="flex gap-4 pt-1">
-                  <div className="h-4 w-28 bg-slate-100 rounded-md animate-pulse" />
-                  <div className="h-4 w-24 bg-slate-100 rounded-md animate-pulse" />
+                  <div className="h-4 w-28 bg-muted rounded-md animate-pulse" />
+                  <div className="h-4 w-24 bg-muted rounded-md animate-pulse" />
                 </div>
               </div>
             ))}
@@ -210,17 +208,17 @@ export default function MapPage() {
       {/* Generated Priority Report Display */}
       {!isLoading && !isInitialLoading && report && report.length > 0 && (
         <section className="mt-10">
-          <div className="flex items-center justify-between gap-4 mb-4 pb-2 border-b border-slate-200">
+          <div className="flex items-center justify-between gap-4 mb-4 pb-2 border-b border-border">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-xl font-bold text-foreground">
                 Suggested Priority Interventions
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Synthesized by Gemini from live citizen complaints and regional healthcare capacity
               </p>
             </div>
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              {report.length} Recommendations
+            <span className="text-xs font-medium text-muted-foreground tabular-nums">
+              {report.length} recommendations
             </span>
           </div>
 
@@ -228,33 +226,33 @@ export default function MapPage() {
             {report.map((item) => (
               <div
                 key={item.rank || item.title}
-                className="bg-white rounded-xl border border-slate-200/90 hover:border-slate-300 p-5 transition-colors shadow-xs"
+                className="ia-card rounded-xl hover:border-border p-5 transition-colors shadow-xs"
               >
                 {/* Header with Rank & Title */}
                 <div className="flex items-start gap-3 mb-2">
-                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 text-xs font-extrabold border border-indigo-200 shrink-0">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-accent-soft text-accent-soft-foreground text-xs font-extrabold border border-accent-soft-border shrink-0">
                     {item.rank}
                   </span>
                   <div>
-                    <h3 className="font-bold text-slate-900 text-base leading-snug">
+                    <h3 className="font-bold text-foreground text-base leading-snug">
                       {item.title}
                     </h3>
                   </div>
                 </div>
 
                 {/* Reasoning */}
-                <p className="text-slate-700 text-sm leading-relaxed mb-3 pl-10">
+                <p className="text-foreground/80 text-sm leading-relaxed mb-3 pl-10">
                   {item.reasoning}
                 </p>
 
                 {/* Metadata tags */}
-                <div className="flex items-center gap-3 pl-10 flex-wrap text-xs text-slate-600">
-                  <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 font-medium">
-                    Category: <strong className="text-slate-800">{item.relatedCategory}</strong>
+                <div className="flex items-center gap-3 pl-10 flex-wrap text-xs text-muted-foreground">
+                  <span className="px-2.5 py-1 rounded-md bg-muted border border-border font-medium">
+                    Category: <strong className="text-foreground/90">{item.relatedCategory}</strong>
                   </span>
                   {item.affectedArea && (
-                    <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 font-medium">
-                      📍 Area: <strong className="text-slate-800">{item.affectedArea}</strong>
+                    <span className="px-2.5 py-1 rounded-md bg-muted border border-border font-medium">
+                      Area: <strong className="text-foreground/90">{item.affectedArea}</strong>
                     </span>
                   )}
                 </div>

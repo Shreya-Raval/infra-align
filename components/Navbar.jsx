@@ -1,47 +1,32 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useAuthProfile } from "@/hooks/useAuthProfile";
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          if (userDoc.exists()) {
-            setUserRole(userDoc.data()?.role || "citizen");
-          } else {
-            setUserRole("citizen");
-          }
-        } catch {
-          setUserRole("citizen");
-        }
-      } else {
-        setUserRole(null);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  const { currentUser, userRole } = useAuthProfile();
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
+    setIsSigningOut(true);
     try {
       await signOut(auth);
+      setShowSignOutConfirm(false);
       router.push("/");
     } catch (err) {
       console.error("Failed to sign out:", err);
+    } finally {
+      setIsSigningOut(false);
     }
   };
 
@@ -57,12 +42,10 @@ export default function Navbar() {
   ];
 
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200">
+    <header className="sticky top-0 z-50 bg-card/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-border">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand Wordmark Logo */}
         <Logo />
 
-        {/* Navigation Links */}
         <nav className="flex items-center gap-1 sm:gap-2">
           {navLinks.map((link) => {
             const isActive = pathname === link.href;
@@ -70,11 +53,7 @@ export default function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                }`}
+                className={isActive ? "ia-nav-link-active" : "ia-nav-link"}
               >
                 {link.label}
               </Link>
@@ -84,29 +63,41 @@ export default function Navbar() {
           {currentUser ? (
             <button
               type="button"
-              onClick={handleSignOut}
-              className="px-3.5 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 transition-all cursor-pointer"
+              onClick={() => setShowSignOutConfirm(true)}
+              className="ia-nav-link hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-500/10 cursor-pointer"
             >
               Sign Out
             </button>
           ) : (
             <Link
               href="/login"
-              className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              className={
                 pathname === "/login"
-                  ? "bg-indigo-50 text-indigo-700 font-semibold shadow-xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-              }`}
+                  ? "ia-nav-link-active"
+                  : "ia-btn-secondary px-3.5 py-1.5 text-sm"
+              }
             >
               Sign In
             </Link>
           )}
 
-          <div className="pl-1 sm:pl-1.5 border-l border-slate-200 ml-1">
+          <div className="pl-1 sm:pl-1.5 border-l border-border ml-1">
             <ThemeToggle />
           </div>
         </nav>
       </div>
+
+      <ConfirmDialog
+        open={showSignOutConfirm}
+        title="Sign out?"
+        message="You will need to sign in again to report issues or view your complaints."
+        confirmLabel="Sign Out"
+        cancelLabel="Stay Signed In"
+        variant="danger"
+        isLoading={isSigningOut}
+        onConfirm={handleSignOut}
+        onCancel={() => setShowSignOutConfirm(false)}
+      />
     </header>
   );
 }
