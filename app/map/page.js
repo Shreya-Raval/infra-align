@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { countryConfig } from "@/lib/countryConfig";
+import { Sparkles, XCircle, Info } from "lucide-react";
 
 const ComplaintsMap = dynamic(() => import("@/components/ComplaintsMap"), {
   ssr: false,
@@ -60,7 +61,7 @@ export default function MapPage() {
         ) {
           setError(
             data.message ||
-              "AI rate limit or quota exceeded. Please wait a minute and try again."
+            "AI rate limit or quota exceeded. Please wait a minute and try again."
           );
         } else if (
           res.status === 503 ||
@@ -68,13 +69,13 @@ export default function MapPage() {
         ) {
           setError(
             data.message ||
-              "AI service is currently experiencing high traffic. Please try again in a moment."
+            "AI service is currently experiencing high traffic. Please try again in a moment."
           );
         } else {
           setError(
             data.message ||
-              data.error ||
-              "Failed to generate priority report. Please try again."
+            data.error ||
+            "Failed to generate priority report. Please try again."
           );
         }
         return;
@@ -148,7 +149,7 @@ export default function MapPage() {
               </>
             ) : (
               <>
-                <span>✨</span>
+                <Sparkles className="w-4 h-4" />
                 <span>{hasReport ? "Regenerate Report" : "Generate Priority Report"}</span>
               </>
             )}
@@ -161,15 +162,17 @@ export default function MapPage() {
 
       {/* Error alert */}
       {!isLoading && !isInitialLoading && error && (
-        <div className="mt-6 p-4 rounded-xl ia-alert-error text-sm font-medium">
-          ❌ {error}
+        <div className="mt-6 p-4 rounded-xl ia-alert-error text-sm font-medium flex items-center gap-1.5">
+          <XCircle className="w-4 h-4 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
       {/* Info message */}
       {!isLoading && !isInitialLoading && reportMessage && (!report || report.length === 0) && (
-        <div className="mt-6 p-4 rounded-xl ia-alert-warning text-sm">
-          ℹ️ {reportMessage}
+        <div className="mt-6 p-4 rounded-xl ia-alert-warning text-sm flex items-center gap-1.5">
+          <Info className="w-4 h-4 shrink-0" />
+          <span>{reportMessage}</span>
         </div>
       )}
 

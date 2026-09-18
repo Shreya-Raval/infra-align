@@ -23,7 +23,7 @@ import {
   chartAxisTick,
   chartGridStroke,
 } from "@/lib/uiTheme";
-import { IconRefresh, IconChart } from "@/components/Icons";
+import { RefreshCcw, ChartColumnBig } from "lucide-react";
 
 const CATEGORY_COLORS = {
   Roads: "#6366f1",
@@ -229,9 +229,9 @@ export default function DashboardPage() {
             type="button"
             onClick={fetchComplaints}
             disabled={loading}
-            className="ia-btn-secondary px-3.5 py-2 cursor-pointer disabled:opacity-50"
+            className="ia-btn-secondary px-3.5 py-2 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
           >
-            <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             <span>{loading ? "Refreshing..." : "Refresh"}</span>
           </button>
         </div>
@@ -247,7 +247,7 @@ export default function DashboardPage() {
       ) : complaints.length === 0 ? (
         <div className="ia-card p-12 text-center max-w-lg mx-auto">
           <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto mb-3 text-muted-foreground">
-            <IconChart className="h-5 w-5" />
+            <ChartColumnBig className="h-5 w-5" />
           </div>
           <h2 className="text-lg font-bold text-foreground mb-1">
             No complaints registered yet

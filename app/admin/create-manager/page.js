@@ -5,6 +5,7 @@ import Link from "next/link";
 import { auth } from "@/lib/firebase";
 import { useAuthProfile } from "@/hooks/useAuthProfile";
 import LocationFields from "@/components/LocationFields";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 export default function CreateManagerPage() {
   const { currentUser, userRole, loading: authChecking } = useAuthProfile();
@@ -207,15 +208,17 @@ export default function CreateManagerPage() {
 
           {/* Success Alert */}
           {successMessage && (
-            <div className="p-3.5 rounded-xl ia-alert-success text-xs sm:text-sm font-medium">
-              ✅ {successMessage}
+            <div className="p-3.5 rounded-xl ia-alert-success text-xs sm:text-sm font-medium flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{successMessage}</span>
             </div>
           )}
 
           {/* Error Alert */}
           {error && (
-            <div className="p-3.5 rounded-xl ia-alert-error text-xs sm:text-sm font-medium">
-              ❌ {error}
+            <div className="p-3.5 rounded-xl ia-alert-error text-xs sm:text-sm font-medium flex items-center gap-1.5">
+              <XCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 

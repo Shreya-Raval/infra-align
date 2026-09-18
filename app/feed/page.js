@@ -13,7 +13,7 @@ import {
   query,
 } from "firebase/firestore";
 import ComplaintCard from "@/components/ComplaintCard";
-import { IconPlus } from "@/components/Icons";
+import { Plus } from "lucide-react";
 
 const CATEGORY_OPTIONS = [
   "All Categories",
@@ -141,9 +141,9 @@ export default function FeedPage() {
 
         <Link
           href="/report"
-          className="ia-btn-primary px-5 py-2.5 shrink-0"
+          className="ia-btn-primary px-5 py-2.5 shrink-0 flex items-center gap-2"
         >
-          <IconPlus />
+          <Plus className="w-4 h-4" />
           <span>Report New Issue</span>
         </Link>
       </div>
@@ -212,23 +212,23 @@ export default function FeedPage() {
         {(categoryFilter !== "All Categories" ||
           stateFilter.trim() !== "" ||
           statusFilter !== "All Statuses") && (
-          <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/60 text-xs text-muted-foreground">
-            <span>
-              Showing <strong>{filteredComplaints.length}</strong> matching report(s)
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setCategoryFilter("All Categories");
-                setStateFilter("");
-                setStatusFilter("All Statuses");
-              }}
-              className="text-indigo-600 dark:text-indigo-400 hover:text-accent-soft-foreground font-semibold cursor-pointer"
-            >
-              Reset Filters
-            </button>
-          </div>
-        )}
+            <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/60 text-xs text-muted-foreground">
+              <span>
+                Showing <strong>{filteredComplaints.length}</strong> matching report(s)
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryFilter("All Categories");
+                  setStateFilter("");
+                  setStatusFilter("All Statuses");
+                }}
+                className="text-indigo-600 dark:text-indigo-400 hover:text-accent-soft-foreground font-semibold cursor-pointer"
+              >
+                Reset Filters
+              </button>
+            </div>
+          )}
       </div>
 
       {/* Complaints Feed */}

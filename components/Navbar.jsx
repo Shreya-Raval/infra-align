@@ -9,6 +9,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useAuthProfile } from "@/hooks/useAuthProfile";
+import { User, LogOut } from "lucide-react";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -32,13 +33,13 @@ export default function Navbar() {
 
   const navLinks = [
     { href: "/", label: "Dashboard" },
-    { href: "/feed", label: "Public Feed" },
-    { href: "/report", label: "Report Issue" },
-    ...(currentUser ? [{ href: "/my-complaints", label: "My Complaints" }] : []),
+    { href: "/feed", label: "Feed" },
+    { href: "/report", label: "Report" },
+    ...(currentUser ? [{ href: "/my-complaints", label: "Complaints" }] : []),
     ...(userRole === "superadmin"
-      ? [{ href: "/admin/create-manager", label: "Create Manager" }]
+      ? [{ href: "/admin/create-manager", label: "Add Manager" }]
       : []),
-    { href: "/map", label: "Map & Priority Insights" },
+    { href: "/map", label: "Insights Map" },
   ];
 
   return (
@@ -60,15 +61,7 @@ export default function Navbar() {
             );
           })}
 
-          {currentUser ? (
-            <button
-              type="button"
-              onClick={() => setShowSignOutConfirm(true)}
-              className="ia-nav-link hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-500/10 cursor-pointer"
-            >
-              Sign Out
-            </button>
-          ) : (
+          {!currentUser && (
             <Link
               href="/login"
               className={
@@ -81,8 +74,29 @@ export default function Navbar() {
             </Link>
           )}
 
-          <div className="pl-1 sm:pl-1.5 border-l border-border ml-1">
+          <div className="flex items-center gap-1.5 pl-2 sm:pl-3 border-l border-border ml-1">
+            {currentUser && (
+              <Link
+                href="/profile"
+                title={`Logged in as: ${currentUser.email || currentUser.displayName || "User"}`}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer shrink-0 ${pathname === "/profile" ? "ring-2 ring-indigo-500/50 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300" : ""}`}
+              >
+                <User className="w-4 h-4" />
+              </Link>
+            )}
+
             <ThemeToggle />
+
+            {currentUser && (
+              <button
+                type="button"
+                onClick={() => setShowSignOutConfirm(true)}
+                title="Sign Out"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-sm bg-muted hover:bg-muted/80 hover:text-rose-600 dark:hover:text-rose-400 text-foreground transition-colors cursor-pointer shrink-0"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </nav>
       </div>

@@ -7,7 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import ComplaintCard from "@/components/ComplaintCard";
-import { IconPlus } from "@/components/Icons";
+import { Plus, ClipboardList } from "lucide-react";
 
 const CATEGORY_OPTIONS = [
   "All Categories",
@@ -139,9 +139,9 @@ export default function MyComplaintsPage() {
 
         <Link
           href="/report"
-          className="ia-btn-primary px-4 py-2 text-xs sm:text-sm self-start sm:self-auto"
+          className="ia-btn-primary px-4 py-2 text-xs sm:text-sm self-start sm:self-auto flex items-center gap-2"
         >
-          <IconPlus />
+          <Plus className="w-4 h-4" />
           <span>Submit New Issue</span>
         </Link>
       </div>
@@ -222,8 +222,8 @@ export default function MyComplaintsPage() {
       ) : complaints.length === 0 ? (
         /* Zero Complaints Total Empty State */
         <div className="ia-card p-12 text-center max-w-lg mx-auto">
-          <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center text-2xl mx-auto mb-3 text-muted-foreground">
-            📋
+          <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mx-auto mb-3 text-muted-foreground">
+            <ClipboardList className="w-6 h-6" />
           </div>
           <h2 className="text-lg font-bold text-foreground mb-1">
             No complaints submitted yet

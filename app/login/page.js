@@ -11,8 +11,8 @@ import {
   signOut,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { IconMail } from "@/components/Icons";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { Check, CheckCircle2, XCircle, Info, Mail } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -101,6 +101,7 @@ export default function LoginPage() {
       };
 
       await sendSignInLinkToEmail(auth, email.trim(), actionCodeSettings);
+
       window.localStorage.setItem("emailForSignIn", email.trim());
       setMessage("Check your email for a secure sign-in link.");
     } catch (err) {
@@ -169,7 +170,7 @@ export default function LoginPage() {
         <div className="mb-6 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/80 dark:border-emerald-500/30 shadow-xs flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center text-emerald-700 dark:text-emerald-300 text-sm font-bold">
-              ✓
+              <Check className="w-4 h-4 shrink-0" />
             </div>
             <div>
               <div className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">Signed In</div>
@@ -234,7 +235,7 @@ export default function LoginPage() {
       <div className="ia-card p-6 sm:p-8">
         <div className="text-center mb-6">
           <div className="w-12 h-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground mx-auto mb-3">
-            <IconMail />
+            <Mail className="w-5 h-5" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
             Sign in
@@ -278,14 +279,22 @@ export default function LoginPage() {
 
         {/* Feedback Messages */}
         {message && (
-          <div className="mt-4 p-3.5 rounded-xl ia-alert-success text-xs sm:text-sm font-medium">
-            ✅ {message}
+          <div className="mt-4 p-3.5 rounded-xl ia-alert-success text-xs sm:text-sm font-medium flex flex-col gap-2">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{message}</span>
+            </div>
+            <div className="flex items-start gap-1.5 text-[11px] text-emerald-800 dark:text-emerald-300 opacity-80 bg-emerald-100/50 dark:bg-emerald-900/30 p-2 rounded-lg">
+              <Info className="w-3.5 h-3.5 shrink-0" />
+              <span>Note: Check your spam/junk folder if you don't receive the email.</span>
+            </div>
           </div>
         )}
 
         {error && (
-          <div className="mt-4 p-3.5 rounded-xl ia-alert-error text-xs sm:text-sm font-medium">
-            ❌ {error}
+          <div className="mt-4 p-3.5 rounded-xl ia-alert-error text-xs sm:text-sm font-medium flex items-center gap-1.5">
+            <XCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
       </div>

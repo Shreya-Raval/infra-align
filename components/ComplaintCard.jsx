@@ -5,6 +5,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import { getStatusBadgeClass } from "@/lib/uiTheme";
 import ImageLightbox from "@/components/ImageLightbox";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 function StatusBadge({ status }) {
   const currentStatus = (status || "registered").toLowerCase();
@@ -39,26 +40,29 @@ export default function ComplaintCard({
   const [statusError, setStatusError] = useState("");
   const [lightboxImage, setLightboxImage] = useState(null);
 
+  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
+  const [withdrawError, setWithdrawError] = useState("");
+
   const canWithdraw =
     allowWithdraw &&
     isOwner &&
     (c.status || "registered").toLowerCase() !== "closed" &&
     (c.status || "registered").toLowerCase() !== "withdrawn";
 
-  const handleWithdraw = async () => {
-    const confirmed = window.confirm(
-      "Withdraw this complaint? It will no longer be publicly visible by default."
-    );
-    if (!confirmed) return;
-
+  const executeWithdraw = async () => {
+    setShowWithdrawConfirm(false);
     try {
       await updateDoc(doc(db, "complaints", c.id), {
         status: "withdrawn",
       });
     } catch (err) {
       console.error("Failed to withdraw complaint:", err);
-      alert("Failed to withdraw complaint. Please try again.");
+      setWithdrawError(err.message || "Failed to withdraw complaint. Please try again.");
     }
+  };
+
+  const handleWithdraw = () => {
+    setShowWithdrawConfirm(true);
   };
 
   const handleStatusChange = async (e) => {
@@ -114,13 +118,12 @@ export default function ComplaintCard({
           )}
           {c.urgency !== undefined && c.urgency !== null && (
             <span
-              className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${
-                c.urgency >= 4
-                  ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/30"
-                  : c.urgency === 3
-                    ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30"
-                    : "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-700/50 dark:text-slate-300 dark:border-slate-600"
-              }`}
+              className={`px-2 py-0.5 rounded-md text-xs font-semibold border ${c.urgency >= 4
+                ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/30"
+                : c.urgency === 3
+                  ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30"
+                  : "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-700/50 dark:text-slate-300 dark:border-slate-600"
+                }`}
             >
               Urgency: {c.urgency}/5
             </span>
@@ -256,6 +259,26 @@ export default function ComplaintCard({
         src={lightboxImage?.src}
         alt={lightboxImage?.alt}
         onClose={() => setLightboxImage(null)}
+      />
+
+      <ConfirmDialog
+        open={showWithdrawConfirm}
+        onCancel={() => setShowWithdrawConfirm(false)}
+        onConfirm={executeWithdraw}
+        title="Withdraw Complaint"
+        message="Are you sure you want to withdraw this complaint? It will no longer be publicly visible."
+        confirmLabel="Withdraw"
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        open={Boolean(withdrawError)}
+        onCancel={() => setWithdrawError("")}
+        onConfirm={() => setWithdrawError("")}
+        title="Withdrawal Failed"
+        message={withdrawError}
+        confirmLabel="Dismiss"
+        variant="default"
       />
     </div>
   );

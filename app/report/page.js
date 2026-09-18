@@ -13,6 +13,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import LocationFields from "@/components/LocationFields";
+import { Info, ShieldAlert, CheckCircle2, XCircle, X } from "lucide-react";
 
 export default function ReportPage() {
   const router = useRouter();
@@ -210,12 +211,12 @@ export default function ReportPage() {
         if (res.status === 429 || data.error === "rate_limited") {
           setError(
             data.message ||
-              "You've submitted several complaints recently. Please wait a few minutes and try again."
+            "You've submitted several complaints recently. Please wait a few minutes and try again."
           );
         } else if (res.status === 503 || data.error === "service_unavailable") {
           setError(
             data.message ||
-              "We're experiencing high traffic right now. Please try again in a moment."
+            "We're experiencing high traffic right now. Please try again in a moment."
           );
         } else {
           setError(data.error || "Failed to transcribe audio.");
@@ -280,12 +281,12 @@ export default function ReportPage() {
         if (res.status === 429 || data.error === "rate_limited") {
           setError(
             data.message ||
-              "You've submitted several complaints recently. Please wait a few minutes and try again."
+            "You've submitted several complaints recently. Please wait a few minutes and try again."
           );
         } else if (res.status === 503 || data.error === "service_unavailable") {
           setError(
             data.message ||
-              "We're experiencing high traffic right now. Please try again in a moment."
+            "We're experiencing high traffic right now. Please try again in a moment."
           );
         } else {
           setError(data.error || "Complaint text is too short.");
@@ -486,9 +487,8 @@ export default function ReportPage() {
               <div className="flex items-center gap-3">
                 <label
                   htmlFor="photo-upload"
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-border bg-muted dark:bg-slate-900/40 text-foreground/80 hover:bg-muted hover:text-foreground cursor-pointer transition-colors ${
-                    isSubmitting || selectedImages.length >= 10 ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-border bg-muted dark:bg-slate-900/40 text-foreground/80 hover:bg-muted hover:text-foreground cursor-pointer transition-colors ${isSubmitting || selectedImages.length >= 10 ? "opacity-50 cursor-not-allowed" : ""
+                    }`}
                 >
                   Add photos
                 </label>
@@ -526,9 +526,9 @@ export default function ReportPage() {
                         onClick={() => handleRemoveImage(index)}
                         disabled={isSubmitting}
                         title="Remove image"
-                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 hover:bg-rose-600 text-white flex items-center justify-center text-[10px] transition-colors"
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/80 hover:bg-rose-600 text-white flex items-center justify-center transition-colors"
                       >
-                        ✕
+                        <X className="w-3 h-3" />
                       </button>
                     </div>
                   ))}
@@ -545,11 +545,10 @@ export default function ReportPage() {
                 type="button"
                 onClick={isRecording ? stopRecording : startRecording}
                 disabled={isSubmitting || isTranscribing}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-xs ${
-                  isRecording
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-xs ${isRecording
                     ? "bg-rose-600 hover:bg-rose-700 text-white animate-pulse"
                     : "bg-muted hover:bg-muted text-foreground/90 border border-border/80"
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 <span>{isRecording ? "Stop recording" : "Record voice complaint"}</span>
               </button>
@@ -605,7 +604,7 @@ export default function ReportPage() {
                 />
               </div>
               <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
-                <span>ℹ️</span> We correlate device location coordinates in the background to assist automated geocoding.
+                <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" /> We correlate device location coordinates in the background to assist automated geocoding.
               </p>
             </div>
 
@@ -652,8 +651,9 @@ export default function ReportPage() {
 
             {/* Moderation Removal Notice */}
             {moderationWarning && (
-              <div className="p-3 rounded-xl ia-alert-error text-sm">
-                🛡️ {moderationWarning}
+              <div className="p-3 rounded-xl ia-alert-error text-sm flex items-center gap-1.5">
+                <ShieldAlert className="w-4 h-4 shrink-0" />
+                <span>{moderationWarning}</span>
               </div>
             )}
 
@@ -667,7 +667,10 @@ export default function ReportPage() {
             {/* Success Message */}
             {successMessage && (
               <div className="p-3.5 rounded-xl ia-alert-success text-sm font-medium flex items-center justify-between gap-3">
-                <span>✅ {successMessage}</span>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{successMessage}</span>
+                </div>
                 <Link
                   href="/feed"
                   className="underline font-semibold hover:text-emerald-900 dark:text-emerald-200 shrink-0"
@@ -679,8 +682,9 @@ export default function ReportPage() {
 
             {/* Error Message */}
             {error && (
-              <div className="p-3.5 rounded-xl ia-alert-error text-sm font-medium">
-                ❌ {error}
+              <div className="p-3.5 rounded-xl ia-alert-error text-sm font-medium flex items-center gap-1.5">
+                <XCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
               </div>
             )}
 
@@ -688,7 +692,7 @@ export default function ReportPage() {
             <button
               type="submit"
               disabled={isSubmitting || isRecording || isTranscribing}
-            className="ia-btn-primary w-full py-3 text-base"
+              className="ia-btn-primary w-full py-3 text-base"
             >
               {isSubmitting ? (
                 <>

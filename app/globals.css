@@ -85,6 +85,21 @@ textarea {
   font-family: inherit;
 }
 
+/* Replace native select arrow with a custom SVG chevron that has proper spacing */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 1rem 1rem;
+  padding-right: 2.25rem !important;
+}
+
+.dark select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
 button {
   font-family: inherit;
 }
@@ -96,9 +111,7 @@ button {
   }
 
   .ia-input {
-    @apply w-full rounded-xl border border-border bg-muted/50 text-foreground placeholder:text-muted-foreground
-      focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring/50
-      dark:bg-slate-900/50 dark:focus:bg-slate-900/80 transition-colors;
+    @apply w-full rounded-xl border border-border bg-muted/50 text-foreground placeholder:text-muted-foreground focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring/50 dark:bg-slate-900/50 dark:focus:bg-slate-900/80 transition-colors;
   }
 
   .ia-pill {
@@ -123,51 +136,37 @@ button {
 
   /* Primary CTAs — brand indigo, always white label */
   .ia-btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-sm
-      bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.99]
-      dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400
-      disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
-      shadow-sm transition-all;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-sm bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.99] dark:bg-indigo-500 dark:text-white dark:hover:bg-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 shadow-sm transition-all;
   }
 
   /* Secondary / quiet actions */
   .ia-btn-secondary {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold text-xs
-      bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900
-      dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700
-      shadow-xs transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold text-xs bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600 dark:hover:bg-slate-700 shadow-xs transition-colors;
   }
 
   /* Nav chrome — readable slate, not washed gray */
   .ia-nav-link {
-    @apply px-3.5 py-1.5 rounded-lg text-sm font-medium text-slate-600
-      hover:text-slate-900 hover:bg-slate-100 transition-colors
-      dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800;
+    @apply px-3.5 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800;
   }
 
   .ia-nav-link-active {
-    @apply px-3.5 py-1.5 rounded-lg text-sm font-semibold text-indigo-700 bg-indigo-50
-      dark:text-indigo-300 dark:bg-indigo-500/15;
+    @apply px-3.5 py-1.5 rounded-lg text-sm font-semibold text-indigo-700 bg-indigo-50 dark:text-indigo-300 dark:bg-indigo-500/15;
   }
 
   .ia-alert-success {
-    @apply rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800
-      dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300;
+    @apply rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300;
   }
 
   .ia-alert-error {
-    @apply rounded-xl border border-rose-200 bg-rose-50 text-rose-800
-      dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300;
+    @apply rounded-xl border border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300;
   }
 
   .ia-alert-warning {
-    @apply rounded-xl border border-amber-200 bg-amber-50 text-amber-800
-      dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300;
+    @apply rounded-xl border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300;
   }
 
   .ia-alert-info {
-    @apply rounded-xl border border-blue-200 bg-blue-50 text-blue-800
-      dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300;
+    @apply rounded-xl border border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300;
   }
 }
 
@@ -176,10 +175,12 @@ button {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
   }
+
   70% {
     transform: scale(1);
     box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
   }
+
   100% {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
@@ -195,13 +196,16 @@ button {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: var(--muted);
 }
+
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
@@ -209,6 +213,7 @@ button {
 .dark ::-webkit-scrollbar-thumb {
   background: #475569;
 }
+
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
