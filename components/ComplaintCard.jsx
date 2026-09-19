@@ -6,6 +6,8 @@ import { db, auth } from "@/lib/firebase";
 import { getStatusBadgeClass } from "@/lib/uiTheme";
 import ImageLightbox from "@/components/ImageLightbox";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ContactCreatorModal from "@/components/ContactCreatorModal";
+import { MapPin, Mail } from "lucide-react";
 
 function StatusBadge({ status }) {
   const currentStatus = (status || "registered").toLowerCase();
@@ -39,6 +41,7 @@ export default function ComplaintCard({
   const [statusMessage, setStatusMessage] = useState("");
   const [statusError, setStatusError] = useState("");
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
   const [withdrawError, setWithdrawError] = useState("");
@@ -131,30 +134,42 @@ export default function ComplaintCard({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <StatusBadge status={c.status} />
-
           {isManagerOrAdmin &&
-            (c.status || "registered").toLowerCase() !== "withdrawn" && (
-              <div className="flex items-center gap-1.5">
-                <label htmlFor={`status-select-${c.id}`} className="sr-only">
-                  Change Status
-                </label>
-                <select
-                  id={`status-select-${c.id}`}
-                  value={(c.status || "registered").toLowerCase()}
-                  onChange={handleStatusChange}
-                  disabled={isUpdatingStatus}
-                  className="text-xs font-medium bg-muted border border-border rounded-md px-2 py-1 text-foreground hover:bg-muted/80 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer disabled:opacity-50 dark:bg-slate-900/60"
-                >
-                  <option value="registered">Registered</option>
-                  <option value="in progress">In Progress</option>
-                  <option value="closed">Closed</option>
-                </select>
-                {isUpdatingStatus && (
-                  <div className="w-3.5 h-3.5 border-2 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                )}
-              </div>
-            )}
+          (c.status || "registered").toLowerCase() !== "withdrawn" ? (
+            <div className="flex items-center gap-1.5">
+              <label htmlFor={`status-select-${c.id}`} className="sr-only">
+                Change Status
+              </label>
+              <select
+                id={`status-select-${c.id}`}
+                value={(c.status || "registered").toLowerCase()}
+                onChange={handleStatusChange}
+                disabled={isUpdatingStatus}
+                className="text-xs font-medium bg-muted border border-border rounded-md px-2.5 py-1 text-foreground hover:bg-muted/80 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer disabled:opacity-50 dark:bg-slate-900/60"
+              >
+                <option value="registered">Registered</option>
+                <option value="in progress">In Progress</option>
+                <option value="closed">Closed</option>
+              </select>
+              {isUpdatingStatus && (
+                <div className="w-3.5 h-3.5 border-2 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
+          ) : (
+            <StatusBadge status={c.status} />
+          )}
+
+          {isManagerOrAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowEmailModal(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/15 dark:hover:bg-indigo-500/25 dark:text-indigo-300 dark:border-indigo-500/30 transition-colors cursor-pointer shadow-xs"
+              title="Directly email the creator of this complaint"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Email Creator</span>
+            </button>
+          )}
 
         </div>
       </div>
@@ -195,10 +210,21 @@ export default function ComplaintCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-muted-foreground flex-wrap gap-2 pt-2 border-t border-border/60">
-        <span className="flex items-center gap-1 font-medium text-foreground/70">
-          {c.location}
-        </span>
+      <div className="flex items-center justify-between text-xs text-muted-foreground flex-wrap gap-2 pt-2.5 border-t border-border/60">
+        <div className="flex items-center gap-1.5 font-medium text-foreground/80 flex-wrap">
+          <MapPin className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <span>
+            {[c.location, c.city, c.state].filter(Boolean).join(", ")}
+            {c.pincode && (
+              <span className="ml-1.5 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-muted text-muted-foreground border border-border">
+                PIN: {c.pincode}
+              </span>
+            )}
+            {!c.location && !c.city && !c.state && !c.pincode && (
+              <span className="italic text-muted-foreground">Location not specified</span>
+            )}
+          </span>
+        </div>
         <div className="flex items-center gap-3">
           {c.isAnonymous === true ? (
             <span className="italic">Anonymous</span>
@@ -279,6 +305,13 @@ export default function ComplaintCard({
         message={withdrawError}
         confirmLabel="Dismiss"
         variant="default"
+      />
+
+      <ContactCreatorModal
+        open={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        complaint={c}
+        currentUser={currentUser}
       />
     </div>
   );

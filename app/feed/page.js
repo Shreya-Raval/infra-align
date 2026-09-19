@@ -110,14 +110,23 @@ export default function FeedPage() {
       }
     }
 
-    // 3. State / Location Filter
+    // 3. State / Location / Pincode Filter
     if (stateFilter.trim()) {
       const term = stateFilter.trim().toLowerCase();
       const locationMatch = (c.location || "").toLowerCase().includes(term);
+      const cityMatch = (c.city || "").toLowerCase().includes(term);
+      const stateMatch = (c.state || "").toLowerCase().includes(term);
+      const pincodeMatch = (c.pincode || "").toLowerCase().includes(term);
       const stateAttributionMatch = (c.statusChangedByState || "")
         .toLowerCase()
         .includes(term);
-      if (!locationMatch && !stateAttributionMatch) {
+      if (
+        !locationMatch &&
+        !cityMatch &&
+        !stateMatch &&
+        !pincodeMatch &&
+        !stateAttributionMatch
+      ) {
         return false;
       }
     }

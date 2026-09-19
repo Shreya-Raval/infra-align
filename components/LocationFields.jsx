@@ -11,6 +11,7 @@ import {
 import {
   districtStateOptionsFromPostOffices,
   fetchPostOfficesByPincode,
+  normalizeLocationText,
   pincodeMatchesCityState,
   searchPostOfficesByName,
   validateLocationFields,
@@ -55,6 +56,7 @@ const LocationFields = forwardRef(function LocationFields(
 
   const cityWrapRef = useRef(null);
   const searchTimerRef = useRef(null);
+  const latestPincodeRequestRef = useRef("");
 
   useEffect(() => {
     setCityQuery(city || "");
@@ -78,10 +80,10 @@ const LocationFields = forwardRef(function LocationFields(
       setCityError("");
       setShowCityDropdown(false);
 
-      const code = pincode.trim();
+      const code = (pincode || "").trim();
       if (code.length === 6) {
         let offices = postOfficesForPincode;
-        if (!offices.length) {
+        if (!offices.length || offices[0]?.Pincode !== code) {
           setIsLookingUpPincode(true);
           try {
             offices = await fetchPostOfficesByPincode(code);
@@ -109,12 +111,15 @@ const LocationFields = forwardRef(function LocationFields(
   );
 
   const lookupPincode = useCallback(
-    async (code, currentCity = city, currentState = state) => {
+    async (code) => {
+      latestPincodeRequestRef.current = code;
       setIsLookingUpPincode(true);
       setPincodeError("");
 
       try {
         const postOffices = await fetchPostOfficesByPincode(code);
+        if (latestPincodeRequestRef.current !== code) return;
+
         setPincodePostOffices(postOffices);
 
         if (!postOffices.length) {
@@ -123,30 +128,51 @@ const LocationFields = forwardRef(function LocationFields(
         }
 
         const options = districtStateOptionsFromPostOffices(postOffices);
-
-        if (currentCity.trim() && currentState.trim()) {
-          if (!pincodeMatchesCityState(postOffices, currentCity, currentState)) {
-            setPincodeError(
-              `Pincode ${code} does not match ${currentCity.trim()}, ${currentState.trim()}.`
-            );
-          }
+        if (!options.length) {
+          setPincodeError("Could not resolve location details for this pincode.");
           return;
         }
 
-        if (options.length === 1) {
-          await applyCitySelection(options[0], postOffices);
-        } else if (options.length > 1) {
+        // Whenever the pincode is updated, irrespective of whether a city/state is already in place,
+        // find that pincode's city and update it.
+        // If current city & state already match this pincode, keep them.
+        const currentMatches =
+          (city || "").trim() &&
+          (state || "").trim() &&
+          pincodeMatchesCityState(postOffices, city, state);
+
+        if (currentMatches) {
+          setPincodeError("");
+          setCityError("");
+          setShowCityDropdown(false);
           setCityOptions(options);
-          setShowCityDropdown(true);
-          setPincodeError("Multiple areas share this pincode — select your city below.");
+        } else {
+          const matchingOption = options.find(
+            (opt) =>
+              normalizeLocationText(opt.city) === normalizeLocationText(city) &&
+              normalizeLocationText(opt.state) === normalizeLocationText(state)
+          );
+          const targetOption = matchingOption || options[0];
+
+          onCityChange(targetOption.city);
+          onStateChange(targetOption.state);
+          setCityQuery(targetOption.city);
+          setCityError("");
+          setPincodeError("");
+          setShowCityDropdown(false);
+          setCityOptions(options);
         }
       } catch {
-        setPincodeError("Could not look up pincode. Check your connection and try again.");
+        if (latestPincodeRequestRef.current === code) {
+          setPincodeError("Could not look up pincode. Check your connection and try again.");
+        }
       } finally {
-        setIsLookingUpPincode(false);
+        if (latestPincodeRequestRef.current === code) {
+          setIsLookingUpPincode(false);
+        }
       }
     },
-    [applyCitySelection, city, state]
+    [city, state, onCityChange, onStateChange]
   );
 
   const handlePincodeInput = (e) => {
@@ -155,6 +181,7 @@ const LocationFields = forwardRef(function LocationFields(
     setPincodeError("");
 
     if (value.length < 6) {
+      latestPincodeRequestRef.current = "";
       setPincodePostOffices([]);
     }
 
@@ -198,6 +225,13 @@ const LocationFields = forwardRef(function LocationFields(
         setIsSearchingCity(false);
       }
     }, 350);
+  };
+
+  const handleCityKeyDown = (e) => {
+    if (e.key === "Enter" && showCityDropdown && cityOptions.length > 0) {
+      e.preventDefault();
+      applyCitySelection(cityOptions[0]);
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -278,6 +312,7 @@ const LocationFields = forwardRef(function LocationFields(
             type="text"
             value={cityQuery}
             onChange={handleCityQueryChange}
+            onKeyDown={handleCityKeyDown}
             onFocus={() => {
               if (cityOptions.length > 0) setShowCityDropdown(true);
             }}
