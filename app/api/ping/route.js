@@ -1,22 +1,21 @@
-import { adminDb } from "@/lib/firebaseAdmin";
-import { FieldValue } from "firebase-admin/firestore";
-
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const { adminDb } = await import("@/lib/firebaseAdmin");
     const doc = await adminDb.collection("priorityReports").doc("latest").get();
     return Response.json({
       status: "ok",
       docExists: doc.exists,
-      data: doc.data(),
+      reportLength: doc.data()?.report?.length || 0,
+      timestamp: new Date().toISOString(),
     });
   } catch (err) {
     return Response.json({
       status: "error",
-      message: err.message,
+      errorName: err.name,
+      errorMessage: err.message,
       stack: err.stack,
-      name: err.name,
     }, { status: 500 });
   }
 }
