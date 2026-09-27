@@ -26,7 +26,13 @@ export default function MapPage() {
 
   useEffect(() => {
     fetch("/api/priority-report")
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error || `HTTP ${res.status}`);
+        }
+        return res.json().catch(() => ({}));
+      })
       .then((data) => {
         if (data?.report && data.report.length > 0) {
           setReport(data.report);
@@ -36,7 +42,7 @@ export default function MapPage() {
         }
       })
       .catch((err) => {
-        console.error("Failed to load cached priority report:", err);
+        console.warn("Could not load cached priority report:", err?.message || err);
       })
       .finally(() => {
         setIsInitialLoading(false);
@@ -52,7 +58,7 @@ export default function MapPage() {
       const res = await fetch("/api/priority-report", {
         method: "POST",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         if (
@@ -75,7 +81,7 @@ export default function MapPage() {
           setError(
             data.message ||
             data.error ||
-            "Failed to generate priority report. Please try again."
+            `Failed to generate priority report (${res.status}: ${res.statusText || "Server error"}). Please try again.`
           );
         }
         return;
@@ -89,7 +95,7 @@ export default function MapPage() {
     } catch (err) {
       console.error("Failed to generate priority report:", err);
       setError(
-        "Network error while generating priority report. Please try again."
+        err?.message || "Network error while generating priority report. Please try again."
       );
     } finally {
       setIsLoading(false);

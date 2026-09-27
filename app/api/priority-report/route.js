@@ -6,6 +6,9 @@ import { adminDb } from "@/lib/firebaseAdmin";
 import { callGemini } from "@/lib/gemini";
 import { sanitizeComplaintText } from "@/lib/sanitize";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 export async function GET() {
   try {
     const doc = await adminDb.collection("priorityReports").doc("latest").get();
@@ -82,25 +85,29 @@ export async function POST() {
       });
     }
 
-    // 3. Read and parse state hospital CSV from filesystem
-    const csvPath = path.join(
-      process.cwd(),
-      "public",
-      "data",
-      "govt_hospitals_by_state.csv"
-    );
+    // 3. Read and parse state hospital CSV from filesystem (safe fallback if missing in serverless bundle)
     let hospitals = [];
-    if (fs.existsSync(csvPath)) {
-      const csvFile = fs.readFileSync(csvPath, "utf8");
-      const parsed = Papa.parse(csvFile, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-      });
-      hospitals = (parsed.data || []).map((row) => ({
-        state: row.state,
-        govt_hospitals_total: row.govt_hospitals_total,
-      }));
+    try {
+      const csvPath = path.join(
+        process.cwd(),
+        "public",
+        "data",
+        "govt_hospitals_by_state.csv"
+      );
+      if (fs.existsSync(csvPath)) {
+        const csvFile = fs.readFileSync(csvPath, "utf8");
+        const parsed = Papa.parse(csvFile, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+        });
+        hospitals = (parsed.data || []).map((row) => ({
+          state: row.state,
+          govt_hospitals_total: row.govt_hospitals_total,
+        }));
+      }
+    } catch (csvErr) {
+      console.warn("Could not read hospital CSV in serverless context, continuing without it:", csvErr.message);
     }
 
     // 4. Generate priority report with Gemini
